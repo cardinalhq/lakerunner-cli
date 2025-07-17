@@ -18,11 +18,10 @@ var rootCmd = &cobra.Command{
 	Short: "CLI tool to query Lakerunner",
 	Long:  `A CLI tool to interact with deployed lakerunner. It currently supports querying logs.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if cmd.Name() == "help" || cmd.Name() == "completion" || cmd.Name() == "demo" {
+		if cmd.Name() == "help" || cmd.Name() == "demo" {
 			return nil
 		}
 
-		// Skip validation for demo subcommands
 		if cmd.Parent() != nil && cmd.Parent().Name() == "demo" {
 			return nil
 		}

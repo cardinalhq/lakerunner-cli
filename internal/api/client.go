@@ -1,10 +1,14 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/lakerunner/cli/internal/config"
@@ -12,73 +16,197 @@ import (
 
 // Client represents the API client
 type Client struct {
-	config *config.Config
-	client *http.Client
+	baseURL string
+	apiKey  string
+	client  *http.Client
 }
 
-// NewClient creates a new API client
+// LogsRequest represents a request to the logs endpoint
+type LogsRequest struct {
+	Dataset       string  `json:"dataset"`
+	Limit         int     `json:"limit"`
+	Order         string  `json:"order"`
+	ReturnResults bool    `json:"returnResults"`
+	Filter        *Filter `json:"filter,omitempty"`
+}
+
+// Filter represents a filter for log queries
+type Filter struct {
+	K         string   `json:"k"`
+	V         []string `json:"v"`
+	Op        string   `json:"op"`
+	DataType  string   `json:"dataType"`
+	Extracted bool     `json:"extracted"`
+	Computed  bool     `json:"computed"`
+}
+
+// LogsResponse represents a response from the logs endpoint
+type LogsResponse struct {
+	ID      string                 `json:"id"`
+	Type    string                 `json:"type"`
+	Message map[string]interface{} `json:"message"`
+}
+
+// QueryParams represents URL query parameters
+type QueryParams struct {
+	StartTime string `json:"s"`
+	EndTime   string `json:"e"`
+	TagName   string `json:"tagName,omitempty"`
+	DataType  string `json:"dataType,omitempty"`
+}
+
+// NewClient creates a new API client with proper configuration
 func NewClient(cfg *config.Config) *Client {
 	return &Client{
-		config: cfg,
+		baseURL: cfg.LAKERUNNER_QUERY_URL,
+		apiKey:  cfg.LAKERUNNER_API_KEY,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:       10,
+				IdleConnTimeout:    30 * time.Second,
+				DisableCompression: false,
+			},
 		},
 	}
 }
 
-// GetLogs retrieves logs with the given filters
-func (c *Client) GetLogs(filters map[string]interface{}) ([]byte, error) {
-	// TODO: Implement actual API call
-	return []byte(`{"message": "GetLogs not implemented yet"}`), nil
-}
+// buildURL constructs the URL with query parameters
+func (c *Client) buildURL(endpoint string, params QueryParams) string {
+	url := fmt.Sprintf("%s%s", c.baseURL, endpoint)
 
-// GetLogKeys retrieves available log keys
-func (c *Client) GetLogKeys(duration string) ([]byte, error) {
-	// TODO: Implement actual API call
-	return []byte(`{"message": "GetLogKeys not implemented yet"}`), nil
-}
-
-// GetLogKeyValues retrieves key-value pairs for specific keys
-func (c *Client) GetLogKeyValues(keys []string, filters []string) ([]byte, error) {
-	// TODO: Implement actual API call
-	return []byte(`{"message": "GetLogKeyValues not implemented yet"}`), nil
-}
-
-// makeRequest is a helper method for making HTTP requests
-func (c *Client) makeRequest(method, endpoint string, body interface{}) ([]byte, error) {
-	var reqBody []byte
-	var err error
-
-	if body != nil {
-		reqBody, err = json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal request body: %w", err)
-		}
+	var queryParts []string
+	if params.StartTime != "" {
+		queryParts = append(queryParts, fmt.Sprintf("s=%s", params.StartTime))
+	}
+	if params.EndTime != "" {
+		queryParts = append(queryParts, fmt.Sprintf("e=%s", params.EndTime))
+	}
+	if params.TagName != "" {
+		queryParts = append(queryParts, fmt.Sprintf("tagName=%s", params.TagName))
+	}
+	if params.DataType != "" {
+		queryParts = append(queryParts, fmt.Sprintf("dataType=%s", params.DataType))
 	}
 
-	req, err := http.NewRequest(method, c.config.APIURL+endpoint, bytes.NewBuffer(reqBody))
+	if len(queryParts) > 0 {
+		url += "?" + strings.Join(queryParts, "&")
+	}
+
+	return url
+}
+
+// QueryLogs makes a request to the logs endpoint and returns a channel of responses
+func (c *Client) QueryLogs(ctx context.Context, req *LogsRequest, params QueryParams) (<-chan LogsResponse, error) {
+	url := c.buildURL("/api/v1/tags/logs", params)
+
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.config.APIKey)
+	// Set headers according to the API specification
+	httpReq.Header.Set("Accept", "text/event-stream")
+	httpReq.Header.Set("api-key", c.apiKey)
+	httpReq.Header.Set("Content-Type", "text/plain;charset=UTF-8")
+	httpReq.Header.Set("Connection", "keep-alive")
 
-	resp, err := c.client.Do(req)
+	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status: %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var responseBody []byte
-	_, err = resp.Body.Read(responseBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
+	responseChan := make(chan LogsResponse)
 
-	return responseBody, nil
+	go func() {
+		defer resp.Body.Close()
+		defer close(responseChan)
+
+		reader := bufio.NewReader(resp.Body)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					if err == io.EOF {
+						return
+					}
+					return
+				}
+
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+
+				if strings.HasPrefix(line, "data: ") {
+					data := strings.TrimPrefix(line, "data: ")
+					if data == `{"type":"done"}` {
+						return
+					}
+
+					var response LogsResponse
+					if err := json.Unmarshal([]byte(data), &response); err != nil {
+						continue // Skip malformed responses
+					}
+
+					select {
+					case responseChan <- response:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	return responseChan, nil
+}
+
+// Helper functions for creating common request types
+
+// CreateLogsRequest creates a basic logs request
+func CreateLogsRequest(dataset string, limit int, filter *Filter) *LogsRequest {
+	return &LogsRequest{
+		Dataset:       dataset,
+		Limit:         limit,
+		Order:         "DESC",
+		ReturnResults: true,
+		Filter:        filter,
+	}
+}
+
+// CreateFilter creates a filter with the specified parameters
+func CreateFilter(key, operation, dataType string, values []string) *Filter {
+	return &Filter{
+		K:         key,
+		V:         values,
+		Op:        operation,
+		DataType:  dataType,
+		Extracted: false,
+		Computed:  false,
+	}
+}
+
+// CreateQueryParams creates query parameters
+func CreateQueryParams(startTime, endTime, tagName, dataType string) QueryParams {
+	return QueryParams{
+		StartTime: startTime,
+		EndTime:   endTime,
+		TagName:   tagName,
+		DataType:  dataType,
+	}
 }

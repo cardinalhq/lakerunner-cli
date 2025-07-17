@@ -10,5 +10,6 @@ var DemoCmd = &cobra.Command{
 }
 
 func init() {
-	DemoCmd.AddCommand(SetupCmd)
+	DemoCmd.AddCommand(MinioSetupCmd)
+	DemoCmd.AddCommand(PopulateCmd)
 }

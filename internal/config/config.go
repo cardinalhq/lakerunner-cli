@@ -6,14 +6,14 @@ import (
 )
 
 type Config struct {
-	APIURL string
-	APIKey string
+	LAKERUNNER_QUERY_URL string
+	LAKERUNNER_API_KEY   string
 }
 
 func Load() *Config {
 	return &Config{
-		APIURL: getEnv("API_URL", ""),
-		APIKey: getEnv("API_KEY", ""),
+		LAKERUNNER_QUERY_URL: getEnv("LAKERUNNER_QUERY_URL", ""),
+		LAKERUNNER_API_KEY:   getEnv("LAKERUNNER_API_KEY", ""),
 	}
 }
 
@@ -25,11 +25,11 @@ func getEnv(key, fallback string) string {
 }
 
 func (c *Config) Validate() error {
-	if c.APIURL == "" {
-		return fmt.Errorf("API_URL environment variable is required")
+	if c.LAKERUNNER_QUERY_URL == "" {
+		return fmt.Errorf("LAKERUNNER_QUERY_URL environment variable is required")
 	}
-	if c.APIKey == "" {
-		return fmt.Errorf("API_KEY environment variable is required")
+	if c.LAKERUNNER_API_KEY == "" {
+		return fmt.Errorf("LAKERUNNER_API_KEY environment variable is required")
 	}
 	return nil
 }
