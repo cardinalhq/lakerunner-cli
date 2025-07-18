@@ -15,9 +15,12 @@
 package logs
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 
+	"github.com/lakerunner/cli/internal/api"
+	"github.com/lakerunner/cli/internal/config"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -40,13 +43,36 @@ func runAttributesCmd(_ *cobra.Command, targets []string) error {
 		noColor = true
 	}
 
-	// cfg, err := config.Load()
-	// if err != nil {
-	// 	return fmt.Errorf("failed to load configuration: %w", err)
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+	client := api.NewClient(cfg)
+
+	//  POST /api/v1/tags/logs?s=e-1h&e=now
+
+	//  POST /api/v1/tags/logs?s=e-1h&e=now&tagName=resource.service.name&dataType=string
+
+	// POST /api/v1/tags/logs?s=e-1h&e=now
+	// {
+	//     "dataset": "logs",
+	//     "limit": 1000,
+	//     "order": "DESC",
+	//     "returnResults": true,
+	//     "filter": {
+	//         "k": "resource.service.name",
+	//         "v": [
+	//             "query-api"
+	//         ],
+	//         "op": "eq",
+	//         "dataType": "string",
+	//         "extracted": false,
+	//         "computed": false
+	//     }
 	// }
-	// client := api.NewClient(cfg)
 
 	for _, target := range targets {
+
 		slog.Info("Retrieving attributes for target", slog.String("target", target))
 	}
 
