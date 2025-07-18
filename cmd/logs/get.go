@@ -133,6 +133,17 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 		}
 	}
 
+	// Add message regex filter if provided
+	if messageRegex != "" {
+		messageFilter := api.CreateFilter("_cardinalhq.message", "regex", "string", []string{messageRegex})
+
+		if filterObj != nil {
+			filterObj = api.CreateNestedFilter(filterObj, messageFilter)
+		} else {
+			filterObj = messageFilter
+		}
+	}
+
 	// Collect all filters
 	allFilters := []*api.Filter{}
 
@@ -204,6 +215,9 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 	}
 	if logLevel != "" {
 		fmt.Printf("Level Filter: level = %s\n", logLevel)
+	}
+	if messageRegex != "" {
+		fmt.Printf("Message Regex Filter: _cardinalhq.message = %s\n", messageRegex)
 	}
 	if len(filters) > 0 || len(regexFilters) > 0 {
 		for _, f := range filters {
