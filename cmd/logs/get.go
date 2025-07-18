@@ -24,6 +24,7 @@ import (
 	"github.com/lakerunner/cli/internal/api"
 	"github.com/lakerunner/cli/internal/config"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 // Color constants
@@ -87,6 +88,10 @@ var GetCmd = &cobra.Command{
 }
 
 func runGetCmd(cmd *cobra.Command, args []string) error {
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		noColor = true
+	}
+
 	cfg := config.Load()
 	client := api.NewClient(cfg)
 
