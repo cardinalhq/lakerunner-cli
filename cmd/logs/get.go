@@ -76,8 +76,8 @@ func init() {
 	GetCmd.Flags().IntVar(&limit, "limit", 1000, "Limit the number of results returned")
 	GetCmd.Flags().StringSliceVar(&filters, "filter", []string{}, "Filter in format 'key:value' (can be used multiple times)")
 	GetCmd.Flags().StringSliceVar(&regexFilters, "regex", []string{}, "Regex filter in format 'key:value' (can be used multiple times)")
-	GetCmd.Flags().StringVar(&startTime, "start", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
-	GetCmd.Flags().StringVar(&endTime, "end", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
+	GetCmd.Flags().StringVarP(&startTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
+	GetCmd.Flags().StringVarP(&endTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	GetCmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 }
 
