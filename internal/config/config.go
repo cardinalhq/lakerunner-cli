@@ -24,11 +24,12 @@ type Config struct {
 	LAKERUNNER_API_KEY   string
 }
 
-func Load() *Config {
-	return &Config{
+func Load() (*Config, error) {
+	cfg := &Config{
 		LAKERUNNER_QUERY_URL: getEnv("LAKERUNNER_QUERY_URL", ""),
 		LAKERUNNER_API_KEY:   getEnv("LAKERUNNER_API_KEY", ""),
 	}
+	return cfg, cfg.Validate()
 }
 
 func getEnv(key, fallback string) string {

@@ -92,7 +92,10 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 		noColor = true
 	}
 
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
 	client := api.NewClient(cfg)
 
 	// Set default time range if not provided
