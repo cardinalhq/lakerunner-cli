@@ -87,7 +87,7 @@ var GetCmd = &cobra.Command{
 	RunE:  runGetCmd,
 }
 
-func runGetCmd(cmd *cobra.Command, args []string) error {
+func runGetCmd(_ *cobra.Command, _ []string) error {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		noColor = true
 	}
@@ -267,11 +267,6 @@ func runGetCmd(cmd *cobra.Command, args []string) error {
 					serviceColor, serviceName, colorReset,
 					podColor, podName, colorReset,
 					logMessage)
-			}
-
-			// Flush output to stream immediately
-			if f, ok := cmd.OutOrStdout().(*os.File); ok {
-				f.Sync()
 			}
 
 			// Early termination if we've reached the limit
