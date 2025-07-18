@@ -64,11 +64,12 @@ func getColorForLevel(level string) string {
 var (
 	messageRegex string
 	limit        int
-	filters      []string // Support multiple filters
-	regexFilters []string // Support regex filters
+	filters      []string
+	regexFilters []string
 	startTime    string
 	endTime      string
 	noColor      bool
+	appName      string
 )
 
 func init() {
@@ -79,6 +80,7 @@ func init() {
 	GetCmd.Flags().StringVarP(&startTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	GetCmd.Flags().StringVarP(&endTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	GetCmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
+	GetCmd.Flags().StringVarP(&appName, "app", "a", "", "Filter logs by application/service name")
 }
 
 var GetCmd = &cobra.Command{
@@ -107,7 +109,14 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 	}
 
 	// Start with default filter for resource.service.name
-	filterObj := api.CreateFilter("resource.service.name", "has", "string", []string{""})
+	var filterObj *api.Filter
+
+	// If app flag is provided, use it to filter by resource.service.name
+	if appName != "" {
+		filterObj = api.CreateFilter("resource.service.name", "eq", "string", []string{appName})
+	} else {
+		filterObj = api.CreateFilter("resource.service.name", "has", "string", []string{""})
+	}
 
 	// Collect all filters
 	allFilters := []*api.Filter{}
@@ -175,6 +184,9 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 
 	// Display results
 	fmt.Printf("Querying logs from %s to %s...\n", startTime, endTime)
+	if appName != "" {
+		fmt.Printf("App Filter: resource.service.name = %s\n", appName)
+	}
 	if len(filters) > 0 || len(regexFilters) > 0 {
 		for _, f := range filters {
 			fmt.Printf("Filter: %s\n", f)
@@ -182,7 +194,7 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 		for _, f := range regexFilters {
 			fmt.Printf("Regex Filter: %s\n", f)
 		}
-	} else {
+	} else if appName == "" {
 		fmt.Printf("Filter: resource.service.name has *\n")
 	}
 	fmt.Printf("Limit: %d results\n", limit)
