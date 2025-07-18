@@ -1,0 +1,29 @@
+header:
+  license:
+    spdx-id: Apache-2.0
+    copyright-owner: CardinalHQ, Inc
+    copyright-year: 2025
+
+  paths-ignore:
+    - 'bin'
+    - 'buildtime'
+    - '**/*.md'
+    - 'NOTICE'
+    - 'LICENSE'
+    - .gitignore
+    - .dockerignore
+    - .github
+    - .licenserc.yaml
+    - '**/*.yaml'
+    - '**/*.yml'
+    - '**/*.json'
+    - '**/*.mermaid'
+    - go.sum
+    - go.mod
+    - go.work
+    - go.work.sum
+    - '**/testdata/**'
+    - .idea
+    - '*.example'
+
+  comment: on-failure
