@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cardinalhq/oteltools/pkg/dateutils"
 	"github.com/lakerunner/cli/internal/api"
 	"github.com/lakerunner/cli/internal/config"
 	"github.com/spf13/cobra"
@@ -102,13 +103,15 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 	}
 	client := api.NewClient(cfg)
 
-	// Set default time range if not provided
-	if startTime == "" {
-		startTime = "e-4h" // Changed from e-1h to e-4h to get more logs
+	// Parse start and end times using dateutils
+	startMs, endMs, err := dateutils.ToStartEnd(startTime, endTime)
+	if err != nil {
+		return fmt.Errorf("failed to parse time range: %w", err)
 	}
-	if endTime == "" {
-		endTime = "now"
-	}
+
+	// Convert milliseconds to ISO8601 format for API
+	startTimeStr := time.UnixMilli(startMs).UTC().Format(time.RFC3339)
+	endTimeStr := time.UnixMilli(endMs).UTC().Format(time.RFC3339)
 
 	// Start with default filter for resource.service.name
 	var filterObj *api.Filter
@@ -183,7 +186,7 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 	}
 
 	req := api.CreateGraphRequest(expressions)
-	params := api.CreateQueryParams(startTime, endTime, "", "")
+	params := api.CreateQueryParams(startTimeStr, endTimeStr, "", "")
 
 	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // Increased timeout for streaming
@@ -195,7 +198,7 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 	}
 
 	// Display results
-	fmt.Printf("Querying logs from %s to %s...\n", startTime, endTime)
+	fmt.Printf("Querying logs from %s to %s...\n", startTimeStr, endTimeStr)
 	if appName != "" {
 		fmt.Printf("App Filter: resource.service.name = %s\n", appName)
 	}
@@ -209,7 +212,7 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 		for _, f := range regexFilters {
 			fmt.Printf("Regex Filter: %s\n", f)
 		}
-	} 
+	}
 	fmt.Printf("Limit: %d results\n", limit)
 	fmt.Println("---")
 

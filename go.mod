@@ -126,6 +126,7 @@ require (
 	github.com/caarlos0/go-shellwords v1.0.12 // indirect
 	github.com/caarlos0/go-version v0.2.1 // indirect
 	github.com/caarlos0/log v0.5.1 // indirect
+	github.com/cardinalhq/oteltools v0.30.20 // indirect
 	github.com/carlmjohnson/versioninfo v0.22.5 // indirect
 	github.com/catenacyber/perfsprint v0.8.2 // indirect
 	github.com/cavaliergopher/cpio v1.0.1 // indirect
