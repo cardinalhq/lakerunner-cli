@@ -72,10 +72,10 @@ var (
 )
 
 func init() {
-	GetCmd.Flags().StringVar(&messageRegex, "message-regex", "", "Filter logs by message regex pattern")
-	GetCmd.Flags().IntVar(&limit, "limit", 1000, "Limit the number of results returned")
-	GetCmd.Flags().StringSliceVar(&filters, "filter", []string{}, "Filter in format 'key:value' (can be used multiple times)")
-	GetCmd.Flags().StringSliceVar(&regexFilters, "regex", []string{}, "Regex filter in format 'key:value' (can be used multiple times)")
+	GetCmd.Flags().StringVarP(&messageRegex, "message-regex", "m", "", "Filter logs by message regex pattern")
+	GetCmd.Flags().IntVarP(&limit, "limit", "l", 1000, "Limit the number of results returned")
+	GetCmd.Flags().StringSliceVarP(&filters, "filter", "f", []string{}, "Filter in format 'key:value' (can be used multiple times)")
+	GetCmd.Flags().StringSliceVarP(&regexFilters, "regex", "r", []string{}, "Regex filter in format 'key:value' (can be used multiple times)")
 	GetCmd.Flags().StringVarP(&startTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	GetCmd.Flags().StringVarP(&endTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	GetCmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
