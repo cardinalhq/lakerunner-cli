@@ -70,17 +70,19 @@ var (
 	endTime      string
 	noColor      bool
 	appName      string
+	logLevel     string
 )
 
 func init() {
 	GetCmd.Flags().StringVarP(&messageRegex, "message-regex", "m", "", "Filter logs by message regex pattern")
-	GetCmd.Flags().IntVarP(&limit, "limit", "l", 1000, "Limit the number of results returned")
+	GetCmd.Flags().IntVar(&limit, "limit", 1000, "Limit the number of results returned")
 	GetCmd.Flags().StringSliceVarP(&filters, "filter", "f", []string{}, "Filter in format 'key:value' (can be used multiple times)")
 	GetCmd.Flags().StringSliceVarP(&regexFilters, "regex", "r", []string{}, "Regex filter in format 'key:value' (can be used multiple times)")
 	GetCmd.Flags().StringVarP(&startTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	GetCmd.Flags().StringVarP(&endTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	GetCmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	GetCmd.Flags().StringVarP(&appName, "app", "a", "", "Filter logs by application/service name")
+	GetCmd.Flags().StringVarP(&logLevel, "level", "l", "", "Filter logs by log level (e.g., ERROR, INFO, DEBUG, WARN)")
 }
 
 var GetCmd = &cobra.Command{
@@ -116,6 +118,16 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 		filterObj = api.CreateFilter("resource.service.name", "eq", "string", []string{appName})
 	} else {
 		filterObj = api.CreateFilter("resource.service.name", "has", "string", []string{""})
+	}
+
+	if logLevel != "" {
+		levelFilter := api.CreateFilter("_cardinalhq.level", "eq", "string", []string{logLevel})
+
+		if appName != "" {
+			filterObj = api.CreateNestedFilter(filterObj, levelFilter)
+		} else {
+			filterObj = levelFilter
+		}
 	}
 
 	// Collect all filters
@@ -187,6 +199,9 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 	if appName != "" {
 		fmt.Printf("App Filter: resource.service.name = %s\n", appName)
 	}
+	if logLevel != "" {
+		fmt.Printf("Level Filter: level = %s\n", logLevel)
+	}
 	if len(filters) > 0 || len(regexFilters) > 0 {
 		for _, f := range filters {
 			fmt.Printf("Filter: %s\n", f)
@@ -194,9 +209,7 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 		for _, f := range regexFilters {
 			fmt.Printf("Regex Filter: %s\n", f)
 		}
-	} else if appName == "" {
-		fmt.Printf("Filter: resource.service.name has *\n")
-	}
+	} 
 	fmt.Printf("Limit: %d results\n", limit)
 	fmt.Println("---")
 
