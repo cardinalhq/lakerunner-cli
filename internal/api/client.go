@@ -21,23 +21,69 @@ type Client struct {
 	client  *http.Client
 }
 
-// LogsRequest represents a request to the logs endpoint
-type LogsRequest struct {
-	Dataset       string  `json:"dataset"`
-	Limit         int     `json:"limit"`
-	Order         string  `json:"order"`
-	ReturnResults bool    `json:"returnResults"`
-	Filter        *Filter `json:"filter,omitempty"`
+// GraphRequest represents a request to the graph endpoint
+type GraphRequest struct {
+	BaseExpressions map[string]Expression `json:"baseExpressions"`
+}
+
+// Expression represents an expression in a graph request
+type Expression struct {
+	Dataset       string                 `json:"dataset"`
+	Limit         int                    `json:"limit"`
+	Order         string                 `json:"order"`
+	ReturnResults bool                   `json:"returnResults"`
+	Filter        *Filter                `json:"filter,omitempty"`
+	Chart         map[string]interface{} `json:"chart,omitempty"`
 }
 
 // Filter represents a filter for log queries
 type Filter struct {
-	K         string   `json:"k"`
-	V         []string `json:"v"`
-	Op        string   `json:"op"`
-	DataType  string   `json:"dataType"`
-	Extracted bool     `json:"extracted"`
-	Computed  bool     `json:"computed"`
+	K         string   `json:"k,omitempty"`
+	V         []string `json:"v,omitempty"`
+	Op        string   `json:"op,omitempty"`
+	DataType  string   `json:"dataType,omitempty"`
+	Extracted bool     `json:"extracted,omitempty"`
+	Computed  bool     `json:"computed,omitempty"`
+	// For nested filters - use map for dynamic keys
+	Filters map[string]*Filter `json:"-"`
+	// MarshalJSON will handle the dynamic filter keys
+}
+
+// MarshalJSON implements custom JSON marshaling for Filter
+func (f *Filter) MarshalJSON() ([]byte, error) {
+	type Alias Filter // Avoid recursive marshaling
+
+	// Create a map to hold all fields
+	result := make(map[string]interface{})
+
+	// Add the base fields
+	if f.K != "" {
+		result["k"] = f.K
+	}
+	if len(f.V) > 0 {
+		result["v"] = f.V
+	}
+	if f.Op != "" {
+		result["op"] = f.Op
+	}
+	if f.DataType != "" {
+		result["dataType"] = f.DataType
+	}
+	if f.Extracted {
+		result["extracted"] = f.Extracted
+	}
+	if f.Computed {
+		result["computed"] = f.Computed
+	}
+
+	// Add dynamic filters
+	if f.Filters != nil {
+		for key, filter := range f.Filters {
+			result[key] = filter
+		}
+	}
+
+	return json.Marshal(result)
 }
 
 // LogsResponse represents a response from the logs endpoint
@@ -61,10 +107,10 @@ func NewClient(cfg *config.Config) *Client {
 		baseURL: cfg.LAKERUNNER_QUERY_URL,
 		apiKey:  cfg.LAKERUNNER_API_KEY,
 		client: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 60 * time.Second, // Increased timeout for streaming
 			Transport: &http.Transport{
 				MaxIdleConns:       10,
-				IdleConnTimeout:    30 * time.Second,
+				IdleConnTimeout:    60 * time.Second, // Increased idle timeout
 				DisableCompression: false,
 			},
 		},
@@ -73,7 +119,13 @@ func NewClient(cfg *config.Config) *Client {
 
 // buildURL constructs the URL with query parameters
 func (c *Client) buildURL(endpoint string, params QueryParams) string {
-	url := fmt.Sprintf("%s%s", c.baseURL, endpoint)
+	// Ensure baseURL doesn't end with slash and endpoint starts with slash
+	baseURL := strings.TrimSuffix(c.baseURL, "/")
+	if !strings.HasPrefix(endpoint, "/") {
+		endpoint = "/" + endpoint
+	}
+
+	url := baseURL + endpoint
 
 	var queryParts []string
 	if params.StartTime != "" {
@@ -96,9 +148,21 @@ func (c *Client) buildURL(endpoint string, params QueryParams) string {
 	return url
 }
 
-// QueryLogs makes a request to the logs endpoint and returns a channel of responses
-func (c *Client) QueryLogs(ctx context.Context, req *LogsRequest, params QueryParams) (<-chan LogsResponse, error) {
-	url := c.buildURL("/api/v1/tags/logs", params)
+// setCommonHeaders sets the common headers for all requests
+func (c *Client) setCommonHeaders(req *http.Request) {
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("api-key", c.apiKey)
+	req.Header.Set("Content-Type", "text/plain;charset=UTF-8")
+	req.Header.Set("Connection", "keep-alive")
+	// Fix the Origin header to not have trailing slash
+	origin := strings.TrimSuffix(c.baseURL, "/")
+	req.Header.Set("Origin", origin)
+	req.Header.Set("User-Agent", "lakerunner-cli/1.0")
+}
+
+// QueryGraph makes a request to the graph endpoint and returns a channel of responses
+func (c *Client) QueryGraph(ctx context.Context, req *GraphRequest, params QueryParams) (<-chan LogsResponse, error) {
+	url := c.buildURL("/api/v1/graph", params)
 
 	jsonData, err := json.Marshal(req)
 	if err != nil {
@@ -110,11 +174,7 @@ func (c *Client) QueryLogs(ctx context.Context, req *LogsRequest, params QueryPa
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers according to the API specification
-	httpReq.Header.Set("Accept", "text/event-stream")
-	httpReq.Header.Set("api-key", c.apiKey)
-	httpReq.Header.Set("Content-Type", "text/plain;charset=UTF-8")
-	httpReq.Header.Set("Connection", "keep-alive")
+	c.setCommonHeaders(httpReq)
 
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
@@ -133,7 +193,7 @@ func (c *Client) QueryLogs(ctx context.Context, req *LogsRequest, params QueryPa
 		defer resp.Body.Close()
 		defer close(responseChan)
 
-		reader := bufio.NewReader(resp.Body)
+		reader := bufio.NewReaderSize(resp.Body, 4096) // Larger buffer for efficiency
 		for {
 			select {
 			case <-ctx.Done():
@@ -160,7 +220,7 @@ func (c *Client) QueryLogs(ctx context.Context, req *LogsRequest, params QueryPa
 
 					var response LogsResponse
 					if err := json.Unmarshal([]byte(data), &response); err != nil {
-						continue // Skip malformed responses
+						continue
 					}
 
 					select {
@@ -178,14 +238,22 @@ func (c *Client) QueryLogs(ctx context.Context, req *LogsRequest, params QueryPa
 
 // Helper functions for creating common request types
 
-// CreateLogsRequest creates a basic logs request
-func CreateLogsRequest(dataset string, limit int, filter *Filter) *LogsRequest {
-	return &LogsRequest{
+// CreateGraphRequest creates a graph request with expressions
+func CreateGraphRequest(expressions map[string]Expression) *GraphRequest {
+	return &GraphRequest{
+		BaseExpressions: expressions,
+	}
+}
+
+// CreateExpression creates an expression for graph queries
+func CreateExpression(dataset string, limit int, filter *Filter, chart map[string]interface{}) Expression {
+	return Expression{
 		Dataset:       dataset,
 		Limit:         limit,
 		Order:         "DESC",
 		ReturnResults: true,
 		Filter:        filter,
+		Chart:         chart,
 	}
 }
 
@@ -199,6 +267,30 @@ func CreateFilter(key, operation, dataType string, values []string) *Filter {
 		Extracted: false,
 		Computed:  false,
 	}
+}
+
+// CreateNestedFilter creates a filter with multiple conditions using AND logic
+func CreateNestedFilter(filters ...*Filter) *Filter {
+	if len(filters) == 0 {
+		return nil
+	}
+	if len(filters) == 1 {
+		return filters[0]
+	}
+
+	// Create nested filter structure
+	result := &Filter{
+		Op:      "and",
+		Filters: make(map[string]*Filter),
+	}
+
+	// Add filters dynamically with q1, q2, q3, etc.
+	for i, filter := range filters {
+		key := fmt.Sprintf("q%d", i+1)
+		result.Filters[key] = filter
+	}
+
+	return result
 }
 
 // CreateQueryParams creates query parameters
