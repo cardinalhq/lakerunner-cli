@@ -26,4 +26,5 @@ var LogsCmd = &cobra.Command{
 func init() {
 	LogsCmd.AddCommand(GetCmd)
 	LogsCmd.AddCommand(AttributesCmd)
+	LogsCmd.AddCommand(TagValuesCmd)
 }

@@ -250,6 +250,82 @@ func (c *Client) QueryGraph(ctx context.Context, req *GraphRequest, params Query
 	return responseChan, nil
 }
 
+// QueryTags makes a request to the tags endpoint and returns a channel of responses
+func (c *Client) QueryTags(ctx context.Context, req *Expression, params QueryParams) (<-chan LogsResponse, error) {
+	url := c.buildURL("/api/v1/tags/logs", params)
+
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	c.setCommonHeaders(httpReq)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	responseChan := make(chan LogsResponse)
+
+	go func() {
+		defer resp.Body.Close()
+		defer close(responseChan)
+
+		reader := bufio.NewReaderSize(resp.Body, 4096) // Larger buffer for efficiency
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				line, err := reader.ReadString('\n')
+				if err != nil {
+					if err == io.EOF {
+						return
+					}
+					return
+				}
+
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+
+				if strings.HasPrefix(line, "data: ") {
+					data := strings.TrimPrefix(line, "data: ")
+					if data == `{"type":"done"}` {
+						return
+					}
+
+					var response LogsResponse
+					if err := json.Unmarshal([]byte(data), &response); err != nil {
+						continue
+					}
+
+					select {
+					case responseChan <- response:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}
+		}
+	}()
+
+	return responseChan, nil
+}
+
 // Helper functions for creating common request types
 
 // CreateGraphRequest creates a graph request with expressions
