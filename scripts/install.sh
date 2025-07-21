@@ -174,6 +174,42 @@ get_infrastructure_preferences() {
         print_status "Will use HTTP webhook for event notifications"
     fi
 }
+
+get_telemetry_preferences() {
+    echo
+    echo "=== Telemetry Configuration ==="
+    echo "LakeRunner can process logs, metrics, or both."
+    echo "Choose which telemetry types you want to enable:"
+    echo "1. Logs only"
+    echo "2. Metrics only"
+    echo "3. Both logs and metrics (default)"
+    echo
+    
+    get_input "Select telemetry type (1/2/3)" "3" "TELEMETRY_CHOICE"
+    
+    case "$TELEMETRY_CHOICE" in
+        1)
+            ENABLE_LOGS=true
+            ENABLE_METRICS=false
+            print_status "Will enable logs only"
+            ;;
+        2)
+            ENABLE_LOGS=false
+            ENABLE_METRICS=true
+            print_status "Will enable metrics only"
+            ;;
+        3|"")
+            ENABLE_LOGS=true
+            ENABLE_METRICS=true
+            print_status "Will enable both logs and metrics"
+            ;;
+        *)
+            print_error "Invalid choice. Defaulting to both logs and metrics."
+            ENABLE_LOGS=true
+            ENABLE_METRICS=true
+            ;;
+    esac
+}
 generate_random_string() {
     if command -v openssl >/dev/null 2>&1; then
         openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32
@@ -344,7 +380,7 @@ setup:
       memory: 400Mi
 
 ingestLogs:
-  enabled: true
+  enabled: $([ "$ENABLE_LOGS" = true ] && echo "true" || echo "false")
   replicas: 1  # Reduce for local development
   resources:
     requests:
@@ -357,7 +393,7 @@ ingestLogs:
     enabled: false  # Disable autoscaling for local development
 
 ingestMetrics:
-  enabled: true
+  enabled: $([ "$ENABLE_METRICS" = true ] && echo "true" || echo "false")
   replicas: 1  # Reduce for local development
   resources:
     requests:
@@ -370,7 +406,7 @@ ingestMetrics:
     enabled: false  # Disable autoscaling for local development
 
 compactLogs:
-  enabled: true
+  enabled: $([ "$ENABLE_LOGS" = true ] && echo "true" || echo "false")
   replicas: 1
   resources:
     requests:
@@ -383,7 +419,7 @@ compactLogs:
     enabled: false
 
 compactMetrics:
-  enabled: true
+  enabled: $([ "$ENABLE_METRICS" = true ] && echo "true" || echo "false")
   replicas: 1
   resources:
     requests:
@@ -396,7 +432,7 @@ compactMetrics:
     enabled: false
 
 rollupMetrics:
-  enabled: true
+  enabled: $([ "$ENABLE_METRICS" = true ] && echo "true" || echo "false")
   replicas: 1
   resources:
     requests:
@@ -523,6 +559,17 @@ display_connection_info() {
     echo "=== Connection Information ==="
     echo
     
+    # Display telemetry configuration
+    echo "Telemetry Configuration:"
+    if [ "$ENABLE_LOGS" = true ] && [ "$ENABLE_METRICS" = true ]; then
+        echo "  Enabled: Logs and Metrics"
+    elif [ "$ENABLE_LOGS" = true ]; then
+        echo "  Enabled: Logs only"
+    elif [ "$ENABLE_METRICS" = true ]; then
+        echo "  Enabled: Metrics only"
+    fi
+    echo
+    
     # Get MinIO credentials
     MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
     MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
@@ -615,6 +662,9 @@ main() {
     
     # Get infrastructure preferences
     get_infrastructure_preferences
+    
+    # Get telemetry preferences
+    get_telemetry_preferences
     
     # Install dependencies
     install_minio
