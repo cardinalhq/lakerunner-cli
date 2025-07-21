@@ -191,7 +191,7 @@ install_minio() {
             return
         fi
         
-        helm repo add minio https://helm.min.io/ 2>/dev/null || true
+        helm repo add minio https://charts.min.io/ 2>/dev/null || true
         helm repo update
         
         helm install minio minio/minio \
