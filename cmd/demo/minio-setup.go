@@ -82,12 +82,22 @@ var MinioSetupCmd = &cobra.Command{
 
 		log.Println("Adding event notification...")
 		arn := notification.NewArn("minio", "sqs", "", "test", "webhook")
-		queueConfig := notification.NewConfig(arn)
-		queueConfig.AddEvents(notification.ObjectCreatedAll)
-		queueConfig.AddFilterPrefix("")
-		queueConfig.AddFilterSuffix("")
+
 		config := notification.Configuration{}
-		config.AddQueue(queueConfig)
+		// need to create 2 seperate configs for the different prefixes we want to support
+		queueConfig1 := notification.NewConfig(arn)
+		queueConfig1.AddEvents(notification.ObjectCreatedAll)
+		queueConfig1.AddFilterPrefix("otel-raw/")
+		queueConfig1.AddFilterSuffix("")
+		config.AddQueue(queueConfig1)
+
+		// One config for log-raw/
+		queueConfig2 := notification.NewConfig(arn)
+		queueConfig2.AddEvents(notification.ObjectCreatedAll)
+		queueConfig2.AddFilterPrefix("log-raw/")
+		queueConfig2.AddFilterSuffix("")
+		config.AddQueue(queueConfig2)
+
 		err = minioClient.SetBucketNotification(context.Background(), minioBucketName, config)
 		if err != nil {
 			return fmt.Errorf("Failed to set bucket notification: %w", err)
@@ -99,7 +109,7 @@ var MinioSetupCmd = &cobra.Command{
 }
 
 func init() {
-	MinioSetupCmd.Flags().StringVar(&minioEndpoint, "endpoint", "localhost:9000", "MinIO endpoint")
+	MinioSetupCmd.Flags().StringVar(&minioEndpoint, "endpoint", "http://localhost:9000", "MinIO endpoint")
 	MinioSetupCmd.Flags().StringVar(&minioAccessKey, "access-key", "", "MinIO access key")
 	MinioSetupCmd.Flags().StringVar(&minioSecretKey, "secret-key", "", "MinIO secret key")
 	MinioSetupCmd.Flags().StringVar(&minioBucketName, "bucket", "lakerunner", "Bucket name")
