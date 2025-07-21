@@ -72,6 +72,7 @@ var (
 	noColor      bool
 	appName      string
 	logLevel     string
+	columns      string
 )
 
 func init() {
@@ -84,6 +85,7 @@ func init() {
 	GetCmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	GetCmd.Flags().StringVarP(&appName, "app", "a", "", "Filter logs by application/service name")
 	GetCmd.Flags().StringVarP(&logLevel, "level", "l", "", "Filter logs by log level (e.g., ERROR, INFO, DEBUG, WARN)")
+	GetCmd.Flags().StringVarP(&columns, "columns", "c", "", "Comma or space separated columns to display (e.g., 'timestamp,level,message' or 'timestamp level message')")
 }
 
 var GetCmd = &cobra.Command{
@@ -95,6 +97,23 @@ var GetCmd = &cobra.Command{
 func runGetCmd(_ *cobra.Command, _ []string) error {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		noColor = true
+	}
+
+	var selectedColumns []string
+	if columns != "" {
+		parts := strings.Split(columns, ",")
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				spaceParts := strings.Fields(part)
+				for _, spacePart := range spaceParts {
+					spacePart = strings.TrimSpace(spacePart)
+					if spacePart != "" {
+						selectedColumns = append(selectedColumns, spacePart)
+					}
+				}
+			}
+		}
 	}
 
 	cfg, err := config.Load()
@@ -228,6 +247,9 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 		}
 	}
 	fmt.Printf("Limit: %d results\n", limit)
+	if len(selectedColumns) > 0 {
+		fmt.Printf("Columns: %v\n", selectedColumns)
+	}
 	fmt.Println("---")
 
 	responseCount := 0
@@ -296,22 +318,85 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 				}
 			}
 
-			// Format the output with colors
-			levelColor := getColorForLevel(logLevel)
-			timestampColor := colorBlue
-			serviceColor := colorCyan
-			podColor := colorPurple
+			// If columns are specified, show only those columns
+			if len(selectedColumns) > 0 {
+				var outputParts []string
 
-			if noColor {
-				fmt.Printf("[%s] %s %s %s: %s\n",
-					timestamp, logLevel, serviceName, podName, logMessage)
+				for _, col := range selectedColumns {
+					var value string
+					var color string
+
+					switch strings.ToLower(col) {
+					case "timestamp":
+						value = timestamp
+						color = colorBlue
+					case "level":
+						value = logLevel
+						color = getColorForLevel(logLevel)
+					case "message":
+						value = logMessage
+						color = colorReset
+					case "service":
+						value = serviceName
+						color = colorCyan
+					case "pod":
+						value = podName
+						color = colorPurple
+					default:
+						// Try to find the value in tags, with _cardinalhq prefix mapping
+						if tags, ok := message["tags"].(map[string]interface{}); ok {
+							// First try the exact column name
+							if val, ok := tags[col].(string); ok {
+								value = val
+								color = colorCyan
+							} else if val, ok := tags[col].(float64); ok {
+								value = fmt.Sprintf("%v", val)
+								color = colorCyan
+							} else if val, ok := tags[col].(bool); ok {
+								value = fmt.Sprintf("%v", val)
+								color = colorCyan
+							} else {
+								// Try with _cardinalhq prefix
+								cardinalhqKey := "_cardinalhq." + col
+								if val, ok := tags[cardinalhqKey].(string); ok {
+									value = val
+									color = colorCyan
+								} else if val, ok := tags[cardinalhqKey].(float64); ok {
+									value = fmt.Sprintf("%v", val)
+									color = colorCyan
+								} else if val, ok := tags[cardinalhqKey].(bool); ok {
+									value = fmt.Sprintf("%v", val)
+									color = colorCyan
+								}
+							}
+						}
+					}
+
+					if noColor {
+						outputParts = append(outputParts, value)
+					} else {
+						outputParts = append(outputParts, fmt.Sprintf("%s%s%s", color, value, colorReset))
+					}
+				}
+
+				fmt.Println(strings.Join(outputParts, " "))
 			} else {
-				fmt.Printf("[%s%s%s] %s%s%s %s%s%s %s%s%s: %s\n",
-					timestampColor, timestamp, colorReset,
-					levelColor, logLevel, colorReset,
-					serviceColor, serviceName, colorReset,
-					podColor, podName, colorReset,
-					logMessage)
+				levelColor := getColorForLevel(logLevel)
+				timestampColor := colorBlue
+				serviceColor := colorCyan
+				podColor := colorPurple
+
+				if noColor {
+					fmt.Printf("[%s] %s %s %s: %s\n",
+						timestamp, logLevel, serviceName, podName, logMessage)
+				} else {
+					fmt.Printf("[%s%s%s] %s%s%s %s%s%s %s%s%s: %s\n",
+						timestampColor, timestamp, colorReset,
+						levelColor, logLevel, colorReset,
+						serviceColor, serviceName, colorReset,
+						podColor, podName, colorReset,
+						logMessage)
+				}
 			}
 
 			// Early termination if we've reached the limit
