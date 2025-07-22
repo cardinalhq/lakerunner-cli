@@ -209,7 +209,58 @@ get_telemetry_preferences() {
             ENABLE_METRICS=true
             ;;
     esac
+    
+    # Prompt for Cardinal telemetry consent
+    echo
+    echo "=== Cardinal Telemetry Collection ==="
+    echo "LakeRunner can send <0.1% of telemetry data to Cardinal for automatic intelligent alerts."
+    echo "This helps improve the product and provides proactive monitoring."
+    echo
+    
+    get_input "Would you like to enable Cardinal telemetry collection? (y/N)" "N" "ENABLE_CARDINAL_TELEMETRY"
+    
+    if [[ "$ENABLE_CARDINAL_TELEMETRY" =~ ^[Yy]$ ]]; then
+        ENABLE_CARDINAL_TELEMETRY=true
+        print_status "Cardinal telemetry collection enabled"
+        get_cardinal_api_key
+    else
+        ENABLE_CARDINAL_TELEMETRY=false
+        print_status "Cardinal telemetry collection disabled"
+    fi
 }
+
+# Function to get Cardinal API key
+get_cardinal_api_key() {
+    print_status "To enable Cardinal telemetry, you need to create a Cardinal API key."
+    print_status "Please follow these steps:"
+    echo
+    print_status "1. Open your browser and go to: ${BLUE}https://app.test.cardinal.io${NC}"
+    print_status "2. Sign up or log in to your account"
+    print_status "3. Navigate to the API Keys section"
+    print_status "4. Create a new API key"
+    print_status "5. Copy the API key"
+    echo
+    print_warning "The API key will be stored in values-local.yaml. Keep it secure!"
+    echo
+    
+    while true; do
+        read -s -p "Enter your Cardinal API key: " api_key
+        echo
+        
+        if [[ -n "$api_key" ]]; then
+            # Validate API key format (basic check)
+            if [[ "$api_key" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+                CARDINAL_API_KEY="$api_key"
+                break
+            else
+                print_error "Invalid API key format. Please enter a valid API key."
+            fi
+        else
+            print_error "API key cannot be empty. Please enter a valid API key."
+        fi
+    done
+}
+
 generate_random_string() {
     if command -v openssl >/dev/null 2>&1; then
         openssl rand -base64 32 | tr -dc 'a-zA-Z0-9' | head -c 32
@@ -358,10 +409,33 @@ aws:
   accessKeyId: "$MINIO_ACCESS_KEY"
   secretAccessKey: "$MINIO_SECRET_KEY"
 
+# Global OpenTelemetry configuration for Cardinal
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "global:" || echo "# global:")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "  env:" || echo "  # env:")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    # Enable OpenTelemetry logs, metrics, and traces for all components" || echo "    # Enable OpenTelemetry logs, metrics, and traces for all components")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: ENABLE_OTLP_TELEMETRY" || echo "    # - name: ENABLE_OTLP_TELEMETRY")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"true\"" || echo "      #   value: \"true\"")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    # OpenTelemetry configuration for Cardinal" || echo "    # OpenTelemetry configuration for Cardinal")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_TRACES_EXPORTER" || echo "    # - name: OTEL_TRACES_EXPORTER")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"otlp\"" || echo "      #   value: \"otlp\"")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_METRICS_EXPORTER" || echo "    # - name: OTEL_METRICS_EXPORTER")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"otlp\"" || echo "      #   value: \"otlp\"")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_LOGS_EXPORTER" || echo "    # - name: OTEL_LOGS_EXPORTER")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"otlp\"" || echo "      #   value: \"otlp\"")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_EXPORTER_OTLP_ENDPOINT" || echo "    # - name: OTEL_EXPORTER_OTLP_ENDPOINT")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"https://otelhttp.intake.us-east-2.aws.cardinalhq.io\"" || echo "      #   value: \"https://otelhttp.intake.us-east-2.aws.cardinalhq.io\"")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_EXPORTER_OTLP_HEADERS" || echo "    # - name: OTEL_EXPORTER_OTLP_HEADERS")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"x-cardinalhq-api-key=$CARDINAL_API_KEY\"" || echo "      #   value: \"x-cardinalhq-api-key=\"")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_SERVICE_NAME" || echo "    # - name: OTEL_SERVICE_NAME")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"lakerunner\"" || echo "      #   value: \"lakerunner\"")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_RESOURCE_ATTRIBUTES" || echo "    # - name: OTEL_RESOURCE_ATTRIBUTES")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"environment=development,service.name=lakerunner\"" || echo "      #   value: \"environment=development,service.name=lakerunner\"")
+
 # PubSub configuration
 pubsub:
   HTTP:
     enabled: $([ "$USE_SQS" = true ] && echo "false" || echo "true")
+
   SQS:
     enabled: $([ "$USE_SQS" = true ] && echo "true" || echo "false")
     $([ "$USE_SQS" = true ] && echo "queueURL: \"$SQS_QUEUE_URL\"" || echo "# queueURL: \"\"")
@@ -486,8 +560,8 @@ EOF
 install_lakerunner() {
     print_status "Installing LakeRunner in namespace: $NAMESPACE"
     
-    helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
-			  --version 0.2.22 \
+		helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
+        --version 0.2.22 \
         --values values-local.yaml \
         --namespace $NAMESPACE
     print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
@@ -568,6 +642,14 @@ display_connection_info() {
     elif [ "$ENABLE_METRICS" = true ]; then
         echo "  Enabled: Metrics only"
     fi
+    
+    # Display Cardinal telemetry configuration
+    if [ "$ENABLE_CARDINAL_TELEMETRY" = true ]; then
+        echo "  Cardinal Telemetry: Enabled"
+        echo "  Cardinal Dashboard: https://app.test.cardinal.io"
+    else
+        echo "  Cardinal Telemetry: Disabled"
+    fi
     echo
     
     # Get MinIO credentials
@@ -638,6 +720,15 @@ display_connection_info() {
         echo "   - Add event notification pointing to:"
         echo "     http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/"
         echo "3. The event notification ARN should appear in the bucket configuration"
+    fi
+    echo
+    
+    if [ "$ENABLE_CARDINAL_TELEMETRY" = true ]; then
+        echo "4. Cardinal Telemetry is enabled and sending data to Cardinal"
+        echo "   You can view your telemetry data at: https://app.test.cardinal.io"
+    else
+        echo "4. Cardinal Telemetry is disabled"
+        echo "   To enable later, update values-local.yaml and upgrade the release"
     fi
     echo
     echo "For detailed setup instructions, visit: https://github.com/cardinalhq/lakerunner"
