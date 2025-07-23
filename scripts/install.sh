@@ -428,8 +428,6 @@ $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_EXPORTER_OTL
 $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"x-cardinalhq-api-key=$CARDINAL_API_KEY\"" || echo "      #   value: \"x-cardinalhq-api-key=\"")
 $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_SERVICE_NAME" || echo "    # - name: OTEL_SERVICE_NAME")
 $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"lakerunner\"" || echo "      #   value: \"lakerunner\"")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_RESOURCE_ATTRIBUTES" || echo "    # - name: OTEL_RESOURCE_ATTRIBUTES")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"environment=development,service.name=lakerunner\"" || echo "      #   value: \"environment=development,service.name=lakerunner\"")
 
 # PubSub configuration
 pubsub:
@@ -551,6 +549,44 @@ queryWorker:
     limits:
       cpu: 1000m
       memory: 2Gi
+
+# Grafana configuration
+grafana:
+  enabled: true
+  replicas: 1
+  image:
+    repository: grafana/grafana
+    tag: "10.2.3"
+    pullPolicy: Always
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  service:
+    type: ClusterIP
+    port: 3000
+  plugins:
+    - "https://github.com/cardinalhq/cardinalhq-lakerunner-datasource/raw/refs/heads/main/cardinalhq-lakerunner-datasource.zip;cardinalhq-lakerunner-datasource"
+  env:
+    - name: GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS
+      value: "cardinalhq-lakerunner-datasource"
+    - name: GF_PLUGINS_SKIP_SIGNATURE_VERIFICATION
+      value: "true"
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Cardinal
+          type: cardinalhq-lakerunner-datasource
+          access: proxy
+          isDefault: true
+          editable: true
+          jsonData:
+            customPath: "http://lakerunner-query-api.$NAMESPACE.svc.cluster.local:7101"
+            apiKey: "$API_KEY"
 EOF
 
     print_success "values-local.yaml generated successfully"
@@ -560,8 +596,7 @@ EOF
 install_lakerunner() {
     print_status "Installing LakeRunner in namespace: $NAMESPACE"
     
-		helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
-        --version 0.2.22 \
+    helm install lakerunner . \
         --values values-local.yaml \
         --namespace $NAMESPACE
     print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
@@ -696,9 +731,16 @@ display_connection_info() {
         fi
         echo
     else
-        echo "LakeRunner PubSub HTTP Endpoint:"
-        echo "  URL: http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/"
-        echo
+            echo "LakeRunner PubSub HTTP Endpoint:"
+    echo "  URL: http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/"
+    echo
+    
+    echo "Grafana Dashboard:"
+    echo "  URL: http://lakerunner-grafana.$NAMESPACE.svc.cluster.local:3000"
+    echo "  Username: admin"
+    echo "  Password: admin"
+    echo "  Datasource: Cardinal (pre-configured)"
+    echo
     fi
     
     echo "=== Next Steps ==="
