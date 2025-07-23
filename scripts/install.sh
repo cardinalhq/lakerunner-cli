@@ -556,7 +556,7 @@ grafana:
   replicas: 1
   image:
     repository: grafana/grafana
-    tag: "10.2.3"
+    tag: latest
     pullPolicy: Always
   resources:
     requests:
@@ -570,11 +570,6 @@ grafana:
     port: 3000
   plugins:
     - "https://github.com/cardinalhq/cardinalhq-lakerunner-datasource/raw/refs/heads/main/cardinalhq-lakerunner-datasource.zip;cardinalhq-lakerunner-datasource"
-  env:
-    - name: GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS
-      value: "cardinalhq-lakerunner-datasource"
-    - name: GF_PLUGINS_SKIP_SIGNATURE_VERIFICATION
-      value: "true"
   datasources:
     datasources.yaml:
       apiVersion: 1
@@ -586,6 +581,7 @@ grafana:
           editable: true
           jsonData:
             customPath: "http://lakerunner-query-api.$NAMESPACE.svc.cluster.local:7101"
+          secureJsonData:
             apiKey: "$API_KEY"
 EOF
 
