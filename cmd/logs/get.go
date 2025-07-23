@@ -139,7 +139,7 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 	if appName != "" {
 		filterObj = api.CreateFilter("resource.service.name", "eq", "string", []string{appName})
 	} else {
-		filterObj = api.CreateFilter("resource.service.name", "has", "string", []string{""})
+		filterObj = api.CreateFilter("_cardinalhq.telemetry_type", "has", "string", []string{""})
 	}
 
 	if logLevel != "" {

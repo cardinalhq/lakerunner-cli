@@ -108,7 +108,7 @@ func runAttributesCmd(_ *cobra.Command, targets []string) error {
 
 	if !hasFilters {
 		// No filters provided - use the default filter for all tags (like frontend)
-		filterObj = api.CreateFilter("log.telemetry_type", "has", "string", []string{""})
+		filterObj = api.CreateFilter("_cardinalhq.telemetry_type", "has", "string", []string{""})
 	} else {
 		// Handle shorthand flags by adding them to the filters list
 		if attributesAppName != "" {
