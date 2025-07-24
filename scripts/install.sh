@@ -875,6 +875,14 @@ opentelemetry-collector:
       value: "$MINIO_ACCESS_KEY"
     - name: AWS_SECRET_ACCESS_KEY
       value: "$MINIO_SECRET_KEY"
+jaeger:
+  enabled: false
+prometheus:
+  enabled: false
+grafana:
+  enabled: false
+opensearch:
+  enabled: false
 EOF
 
     print_success "OTEL demo values file generated successfully"
