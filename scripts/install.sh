@@ -918,9 +918,6 @@ install_otel_demo() {
             --namespace otel-demo \
             --values otel-demo-values.yaml
 
-        print_status "Waiting for OTEL demo apps to be ready..."
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=opentelemetry-demo -n otel-demo --timeout=300s
-
         print_success "OpenTelemetry demo apps installed successfully"
         echo
         echo "=== OpenTelemetry Demo Apps ==="
