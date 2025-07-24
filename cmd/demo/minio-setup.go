@@ -94,9 +94,15 @@ var MinioSetupCmd = &cobra.Command{
 		// One config for log-raw/
 		queueConfig2 := notification.NewConfig(arn)
 		queueConfig2.AddEvents(notification.ObjectCreatedAll)
-		queueConfig2.AddFilterPrefix("log-raw/")
+		queueConfig2.AddFilterPrefix("logs-raw/")
 		queueConfig2.AddFilterSuffix("")
 		config.AddQueue(queueConfig2)
+
+		queueConfig3 := notification.NewConfig(arn)
+		queueConfig3.AddEvents(notification.ObjectCreatedAll)
+		queueConfig3.AddFilterPrefix("metrics-raw/")
+		queueConfig3.AddFilterSuffix("")
+		config.AddQueue(queueConfig3)
 
 		err = minioClient.SetBucketNotification(context.Background(), minioBucketName, config)
 		if err != nil {
