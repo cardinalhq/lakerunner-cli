@@ -210,7 +210,6 @@ get_telemetry_preferences() {
             ;;
     esac
     
-    # Prompt for Cardinal telemetry consent
     echo
     echo "=== Cardinal Telemetry Collection ==="
     echo "LakeRunner can send <0.1% of telemetry data to Cardinal for automatic intelligent alerts."
@@ -229,7 +228,6 @@ get_telemetry_preferences() {
     fi
 }
 
-# Function to get Cardinal API key
 get_cardinal_api_key() {
     print_status "To enable Cardinal telemetry, you need to create a Cardinal API key."
     print_status "Please follow these steps:"
@@ -611,19 +609,17 @@ wait_for_services() {
         print_status "Setup job not found (may have already completed or not needed for upgrade)"
     fi
     
-    # Wait for query-api service
     print_status "Waiting for query-api service..."
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=query-api -n "$NAMESPACE" --timeout=300s
     
     print_success "All services are ready in namespace: $NAMESPACE"
 }
 
-# Function to setup port forwarding
 setup_port_forwarding() {
     if [ "$INSTALL_MINIO" = true ]; then
         print_status "Setting up port forwarding for MinIO Console..."
         
-            # Kill any existing port forwarding processes
+    # Kill any existing port forwarding processes
     if command -v pkill >/dev/null 2>&1; then
         pkill -f "kubectl port-forward.*minio.*9001" 2>/dev/null || true
     else
@@ -632,13 +628,11 @@ setup_port_forwarding() {
     fi
     sleep 1
         
-        # Start port forwarding in background
         print_status "Starting MinIO port forwarding..."
         kubectl -n "$NAMESPACE" port-forward svc/minio 9000:9000 > /dev/null 2>&1 &
         kubectl -n "$NAMESPACE" port-forward svc/minio 9001:9001 > /dev/null 2>&1 &
         PF_PID=$!
         
-        # Wait for port forwarding to start
         print_status "Waiting for port forwarding to be ready..."
         for i in {1..10}; do
             if curl -s http://localhost:9001 > /dev/null 2>&1; then
@@ -658,14 +652,12 @@ setup_port_forwarding() {
     fi
 }
 
-# Function to display connection information
 display_connection_info() {
     print_success "LakeRunner installation completed successfully!"
     echo
     echo "=== Connection Information ==="
     echo
     
-    # Display telemetry configuration
     echo "Telemetry Configuration:"
     if [ "$ENABLE_LOGS" = true ] && [ "$ENABLE_METRICS" = true ]; then
         echo "  Enabled: Logs and Metrics"
@@ -675,7 +667,6 @@ display_connection_info() {
         echo "  Enabled: Metrics only"
     fi
     
-    # Display Cardinal telemetry configuration
     if [ "$ENABLE_CARDINAL_TELEMETRY" = true ]; then
         echo "  Cardinal Telemetry: Enabled"
         echo "  Cardinal Dashboard: https://app.test.cardinal.io"
@@ -772,49 +763,213 @@ display_connection_info() {
     echo
     echo "For detailed setup instructions, visit: https://github.com/cardinalhq/lakerunner"
 
+    if [ "$INSTALL_OTEL_DEMO" = true ]; then
+        echo
+        echo "=== OpenTelemetry Demo Apps ==="
+        echo "Demo applications have been installed in the 'otel-demo' namespace."
+        echo "These apps will generate sample telemetry data that will be:"
+        echo "1. Collected by the OpenTelemetry Collector"
+        echo "2. Exported to MinIO S3 storage"
+        echo "3. Processed by LakeRunner"
+        echo "4. Available in Grafana dashboard"
+        echo
+        echo "To access the demo applications:"
+        echo "  kubectl port-forward svc/otel-demo-frontend 8080:8080 -n otel-demo"
+        echo "  Then visit: http://localhost:8080"
+        echo
+        echo "The demo apps will continuously generate logs, metrics, and traces"
+        echo "that will flow through LakeRunner for processing and analysis."
+        echo
+    fi
+
 }
 
-# Main installation function
+ask_install_otel_demo() {
+    echo
+    echo "=== OpenTelemetry Demo Apps ==="
+    echo "Would you like to install the OpenTelemetry demo applications?"
+    echo "This will deploy a sample e-commerce application that generates"
+    echo "logs, metrics, and traces to demonstrate LakeRunner in action."
+    echo
+
+    get_input "Install OTEL demo apps? (y/N)" "N" "INSTALL_OTEL_DEMO"
+
+    if [[ "$INSTALL_OTEL_DEMO" =~ ^[Yy]$ ]]; then
+        INSTALL_OTEL_DEMO=true
+        print_status "Will install OpenTelemetry demo apps"
+    else
+        INSTALL_OTEL_DEMO=false
+        print_status "Skipping OpenTelemetry demo apps installation"
+    fi
+}
+
+generate_otel_demo_values() {
+    print_status "Generating OTEL demo values file..."
+
+    # Get MinIO credentials
+    MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+    MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+
+    cat > otel-demo-values.yaml << EOF
+opentelemetry-collector:
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    processors:
+      batch:
+        timeout: 10s
+    connectors:
+      spanmetrics: {}
+    exporters:
+      awss3/metrics:
+        marshaler: otlp_proto
+        s3uploader:
+          s3_bucket: "lakerunner"
+          s3_prefix: "metrics-raw"
+          endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
+          s3_force_path_style: true
+          disable_ssl: true
+      awss3/logs:
+        marshaler: otlp_proto
+        s3uploader:
+          s3_bucket: "lakerunner"
+          s3_prefix: "logs-raw"
+          endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
+          s3_force_path_style: true
+          disable_ssl: true
+      awss3/traces:
+        marshaler: otlp_proto
+        s3uploader:
+          s3_bucket: "lakerunner"
+          s3_prefix: "traces-raw"
+          endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
+          s3_force_path_style: true
+          disable_ssl: true
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp, spanmetrics]
+          processors:
+            - batch
+          exporters: [awss3/metrics]
+        logs:
+          receivers: [otlp]
+          processors:
+            - batch
+          exporters: [awss3/logs]
+        traces:
+          receivers: [otlp]
+          processors:
+            - batch
+          exporters: [spanmetrics, awss3/traces]
+      telemetry:
+        metrics:
+          level: none
+  extraEnvs:
+    - name: AWS_ACCESS_KEY_ID
+      value: "$MINIO_ACCESS_KEY"
+    - name: AWS_SECRET_ACCESS_KEY
+      value: "$MINIO_SECRET_KEY"
+EOF
+
+    print_success "OTEL demo values file generated successfully"
+}
+
+install_otel_demo() {
+    if [ "$INSTALL_OTEL_DEMO" = true ]; then
+        print_status "Installing OpenTelemetry demo apps..."
+
+        # Check if lakerunner bucket exists (required for OTEL demo to work)
+        if [ "$INSTALL_MINIO" = true ]; then
+            print_status "Checking if lakerunner bucket exists in MinIO..."
+            if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/lakerunner >/dev/null 2>&1; then
+                print_warning "lakerunner bucket does not exist. Creating it..."
+                kubectl exec -n "$NAMESPACE" deployment/minio -- mc mb minio/lakerunner
+                print_success "lakerunner bucket created successfully"
+            else
+                print_success "lakerunner bucket already exists"
+            fi
+        else
+            print_warning "Using external S3 storage. Please ensure the 'lakerunner' bucket exists."
+            echo "The OTEL demo apps will fail if the bucket doesn't exist."
+            read -p "Press Enter to continue..."
+        fi
+
+        kubectl get namespace "otel-demo" >/dev/null 2>&1 || kubectl create namespace "otel-demo"
+
+        # Add OpenTelemetry Helm repository
+        helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 2>/dev/null || true
+        helm repo update
+
+        helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
+            --namespace otel-demo \
+            --values otel-demo-values.yaml
+
+        print_status "Waiting for OTEL demo apps to be ready..."
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=opentelemetry-demo -n otel-demo --timeout=300s
+
+        print_success "OpenTelemetry demo apps installed successfully"
+        echo
+        echo "=== OpenTelemetry Demo Apps ==="
+        echo "Demo applications have been installed in the 'otel-demo' namespace."
+        echo "These apps will generate sample telemetry data that will be:"
+        echo "1. Collected by the OpenTelemetry Collector"
+        echo "2. Exported to MinIO S3 storage"
+        echo "3. Processed by LakeRunner"
+        echo "4. Available in Grafana dashboard"
+        echo
+        echo "To access the demo applications:"
+        echo "  kubectl port-forward svc/otel-demo-frontend 8080:8080 -n otel-demo"
+        echo "  Then visit: http://localhost:8080"
+        echo
+        echo "The demo apps will continuously generate logs, metrics, and traces"
+        echo "that will flow through LakeRunner for processing and analysis."
+        echo
+    else
+        print_status "Skipping OpenTelemetry demo apps installation"
+    fi
+}
+
 main() {
     echo "=========================================="
     echo "    LakeRunner Installation Script"
     echo "=========================================="
     echo
-    
-    # Check prerequisites
+
     check_prerequisites
     
-    # Get namespace configuration
     get_namespace
 
     # Ensure namespace exists before installing anything
     kubectl get namespace "$NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$NAMESPACE"
     
-    # Get infrastructure preferences
     get_infrastructure_preferences
     
-    # Get telemetry preferences
     get_telemetry_preferences
     
-    # Install dependencies
     install_minio
     install_postgresql
     
-    # Generate configuration
     generate_values_file
     
-    # Install LakeRunner
     install_lakerunner
     
-    # Wait for services
     wait_for_services
     
-    # Setup port forwarding
     setup_port_forwarding
     
-    # Display connection information
+    ask_install_otel_demo
+
+    generate_otel_demo_values
+
+    install_otel_demo
+
     display_connection_info
 }
 
-# Run main function
 main "$@" 
