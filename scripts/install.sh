@@ -431,6 +431,7 @@ $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"lakerunner\"" 
 pubsub:
   HTTP:
     enabled: $([ "$USE_SQS" = true ] && echo "false" || echo "true")
+    replicas: 1  # Reduce for local development
 
   SQS:
     enabled: $([ "$USE_SQS" = true ] && echo "true" || echo "false")
@@ -528,8 +529,8 @@ sweeper:
 queryApi:
   enabled: true
   replicas: 1
-  minWorkers: 1
-  maxWorkers: 2
+  minWorkers: 2 # Pin for local development
+  maxWorkers: 2 # Pin for local development
   resources:
     requests:
       cpu: 250m
