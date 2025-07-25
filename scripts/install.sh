@@ -859,6 +859,8 @@ opentelemetry-collector:
     processors:
       batch:
         timeout: 10s
+    connectors:
+      spanmetrics: {}
     exporters:
       awss3/metrics:
         marshaler: otlp_proto
@@ -876,11 +878,10 @@ opentelemetry-collector:
           endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
           s3_force_path_style: true
           disable_ssl: true
-      nop:
     service:
       pipelines:
         metrics:
-          receivers: [otlp]
+          receivers: [otlp, spanmetrics]
           processors:
             - batch
           exporters: [awss3/metrics]
@@ -891,7 +892,7 @@ opentelemetry-collector:
           exporters: [awss3/logs]
         traces:
           receivers: [otlp]
-          exporters: [nop]
+          exporters: [spanmetrics]
       telemetry:
         metrics:
           level: none
