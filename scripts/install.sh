@@ -232,7 +232,7 @@ get_cardinal_api_key() {
     print_status "To enable Cardinal telemetry, you need to create a Cardinal API key."
     print_status "Please follow these steps:"
     echo
-    print_status "1. Open your browser and go to: ${BLUE}https://app.test.cardinal.io${NC}"
+    print_status "1. Open your browser and go to: ${BLUE}https://app.cardinal.io${NC}"
     print_status "2. Sign up or log in to your account"
     print_status "3. Navigate to the API Keys section"
     print_status "4. Create a new API key"
@@ -323,7 +323,8 @@ install_postgresql() {
             --set auth.username=lakerunner \
             --set auth.password=lakerunnerpass \
             --set auth.database=lakerunner \
-            --set persistence.enabled=false
+            --set persistence.enabled=true \
+            --set persistence.size=8Gi
         
         print_status "Waiting for PostgreSQL to be ready..."
         kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=postgresql -n "$NAMESPACE" --timeout=300s
@@ -601,7 +602,6 @@ install_lakerunner() {
 # Function to wait for services to be ready
 wait_for_services() {
     print_status "Waiting for LakeRunner services to be ready in namespace: $NAMESPACE"
-    
     # Check if setup job exists and wait for it to complete
     if kubectl get job lakerunner-setup -n "$NAMESPACE" >/dev/null 2>&1; then
         print_status "Waiting for setup job to complete..."
@@ -609,47 +609,84 @@ wait_for_services() {
     else
         print_status "Setup job not found (may have already completed or not needed for upgrade)"
     fi
-    
     print_status "Waiting for query-api service..."
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=query-api -n "$NAMESPACE" --timeout=300s
-    
+    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=grafana -n "$NAMESPACE" --timeout=300s || true
     print_success "All services are ready in namespace: $NAMESPACE"
 }
 
 setup_port_forwarding() {
-    if [ "$INSTALL_MINIO" = true ]; then
-        print_status "Setting up port forwarding for MinIO Console..."
-        
+    print_status "Setting up port forwarding for LakeRunner services..."
+
     # Kill any existing port forwarding processes
     if command -v pkill >/dev/null 2>&1; then
         pkill -f "kubectl port-forward.*minio.*9001" 2>/dev/null || true
+        pkill -f "kubectl port-forward.*lakerunner-query-api.*7101" 2>/dev/null || true
+        pkill -f "kubectl port-forward.*lakerunner-grafana.*3000" 2>/dev/null || true
     else
         # Fallback for systems without pkill (like macOS)
         ps aux | grep "kubectl port-forward.*minio.*9001" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
+        ps aux | grep "kubectl port-forward.*lakerunner-query-api.*7101" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
+        ps aux | grep "kubectl port-forward.*lakerunner-grafana.*3000" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
     fi
     sleep 1
+
+    # Start LakeRunner Query API port forwarding
+    print_status "Starting LakeRunner Query API port forwarding..."
+    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-query-api 7101:7101 > /dev/null 2>&1 &
+
+    # Start Grafana port forwarding
+    print_status "Starting Grafana port forwarding..."
+    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-grafana 3000:3000 > /dev/null 2>&1 &
+
+    # Setup MinIO port forwarding if using local MinIO
+    if [ "$INSTALL_MINIO" = true ]; then
+        print_status "Setting up port forwarding for MinIO Console..."
         
+        # Start port forwarding in background
         print_status "Starting MinIO port forwarding..."
         kubectl -n "$NAMESPACE" port-forward svc/minio 9000:9000 > /dev/null 2>&1 &
         kubectl -n "$NAMESPACE" port-forward svc/minio 9001:9001 > /dev/null 2>&1 &
-        PF_PID=$!
         
+        # Wait for port forwarding to start
         print_status "Waiting for port forwarding to be ready..."
         for i in {1..10}; do
             if curl -s http://localhost:9001 > /dev/null 2>&1; then
                 print_success "MinIO Console port forwarding started successfully"
                 print_success "Access MinIO Console at: http://localhost:9001"
-                return 0
+                break
             fi
             sleep 1
         done
         
         # If we get here, port forwarding failed
-        print_warning "Port forwarding may not be working. You can manually run:"
-        echo "  kubectl port-forward svc/minio 9001:9001"
-        echo "  Then access: http://localhost:9001"
+        if [ $i -eq 10 ]; then
+            print_warning "MinIO port forwarding may not be working. You can manually run:"
+            echo "  kubectl port-forward svc/minio 9001:9001"
+            echo "  Then access: http://localhost:9001"
+        fi
     else
         print_status "Skipping MinIO port forwarding (using external S3 storage)"
+    fi
+
+    # Wait for LakeRunner services port forwarding to start
+    print_status "Waiting for LakeRunner services port forwarding to be ready..."
+    for i in {1..10}; do
+        if curl -s http://localhost:7101 > /dev/null 2>&1 && curl -s http://localhost:3000 > /dev/null 2>&1; then
+            print_success "LakeRunner services port forwarding started successfully"
+            print_success "Access LakeRunner Query API at: http://localhost:7101"
+            print_success "Access Grafana at: http://localhost:3000"
+            return 0
+        fi
+        sleep 1
+    done
+
+    # If we get here, port forwarding failed
+    print_warning "Some port forwarding may not be working. You can manually run:"
+    echo "  kubectl -n $NAMESPACE port-forward svc/lakerunner-query-api 7101:7101"
+    echo "  kubectl -n $NAMESPACE port-forward svc/lakerunner-grafana 3000:3000"
+    if [ "$INSTALL_MINIO" = true ]; then
+        echo "  kubectl -n $NAMESPACE port-forward svc/minio 9001:9001"
     fi
 }
 
@@ -725,7 +762,7 @@ display_connection_info() {
     echo
     
     echo "Grafana Dashboard:"
-    echo "  URL: http://lakerunner-grafana.$NAMESPACE.svc.cluster.local:3000"
+    echo "  URL: http://localhost:3000"
     echo "  Username: admin"
     echo "  Password: admin"
     echo "  Datasource: Cardinal (pre-configured)"
@@ -885,13 +922,31 @@ install_otel_demo() {
         # Check if lakerunner bucket exists (required for OTEL demo to work)
         if [ "$INSTALL_MINIO" = true ]; then
             print_status "Checking if lakerunner bucket exists in MinIO..."
-            if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/lakerunner >/dev/null 2>&1; then
+            MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+            MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+            S3_BUCKET=${S3_BUCKET:-lakerunner}
+            kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
+            if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/$S3_BUCKET >/dev/null 2>&1; then
                 print_warning "lakerunner bucket does not exist. Creating it..."
                 kubectl exec -n "$NAMESPACE" deployment/minio -- mc mb minio/lakerunner
                 print_success "lakerunner bucket created successfully"
             else
                 print_success "lakerunner bucket already exists"
             fi
+            kubectl exec -n "$NAMESPACE" deployment/minio -- mc admin config set minio notify_webhook:create_object endpoint="http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/" >/dev/null 2>&1
+            echo "Created webhook to pubsub, restarting minio pod to apply configuration"
+            kubectl rollout restart deployment/minio -n "$NAMESPACE"
+            sleep 10
+            echo "slept 10 seconds"
+            echo $S3_BUCKET
+            # Re-setup mc alias after pod restart
+            kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
+            kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "logs-raw"
+            echo "added logs-raw webhook"
+            kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "metrics-raw" >/dev/null 2>&1
+            echo "added metrics-raw webhook"
+            kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "otel-raw" >/dev/null 2>&1
+            echo "added otel-raw webhook"
         else
             print_warning "Using external S3 storage. Please ensure the 'lakerunner' bucket exists."
             echo "The OTEL demo apps will fail if the bucket doesn't exist."
