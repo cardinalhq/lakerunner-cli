@@ -529,26 +529,26 @@ sweeper:
 queryApi:
   enabled: true
   replicas: 1
-  minWorkers: 2 # Pin for local development
-  maxWorkers: 2 # Pin for local development
+  minWorkers: 1 # Pin for local development
+  maxWorkers: 1 # Pin for local development
   resources:
     requests:
-      cpu: 250m
-      memory: 512Mi
+      cpu: 1000m
+      memory: 1Gi
     limits:
-      cpu: 500m
+      cpu: 1000m
       memory: 1Gi
 
 queryWorker:
   enabled: true
-  initialReplicas: 2 # Pin for local development
+  initialReplicas: 1 # Pin for local development
   resources:
     requests:
-      cpu: 500m
-      memory: 1Gi
+      cpu: 1000m
+      memory: 4Gi
     limits:
       cpu: 1000m
-      memory: 2Gi
+      memory: 4Gi
 
 # Grafana configuration
 grafana:
