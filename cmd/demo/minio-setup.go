@@ -115,7 +115,7 @@ var MinioSetupCmd = &cobra.Command{
 }
 
 func init() {
-	MinioSetupCmd.Flags().StringVar(&minioEndpoint, "endpoint", "http://localhost:9000", "MinIO endpoint")
+	MinioSetupCmd.Flags().StringVar(&minioEndpoint, "endpoint", "localhost:9000", "MinIO endpoint")
 	MinioSetupCmd.Flags().StringVar(&minioAccessKey, "access-key", "", "MinIO access key")
 	MinioSetupCmd.Flags().StringVar(&minioSecretKey, "secret-key", "", "MinIO secret key")
 	MinioSetupCmd.Flags().StringVar(&minioBucketName, "bucket", "lakerunner", "Bucket name")
