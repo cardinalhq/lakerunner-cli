@@ -284,7 +284,8 @@ install_minio() {
             --set accessKey=minioadmin \
             --set secretKey=minioadmin \
             --set mode=standalone \
-            --set persistence.enabled=false \
+            --set persistence.enabled=true \
+            --set persistence.size=10Gi \
             --set service.type=ClusterIP \
             --set resources.requests.memory=128Mi \
             --set resources.requests.cpu=100m \
@@ -297,9 +298,7 @@ install_minio() {
         
         print_status "Waiting for MinIO to be ready..."
         kubectl wait --for=condition=ready pod -l app=minio -n "$NAMESPACE" --timeout=300s
-        
-        kubectl -n "$NAMESPACE" patch service minio -p '{"spec":{"ports":[{"name":"console","port":9001,"protocol":"TCP","targetPort":9001}]}}'
-        
+                
         print_success "MinIO installed successfully"
     else
         print_status "Skipping MinIO installation (using existing S3 storage)"
@@ -631,14 +630,6 @@ setup_port_forwarding() {
     fi
     sleep 1
 
-    # Start LakeRunner Query API port forwarding
-    print_status "Starting LakeRunner Query API port forwarding..."
-    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-query-api 7101:7101 > /dev/null 2>&1 &
-
-    # Start Grafana port forwarding
-    print_status "Starting Grafana port forwarding..."
-    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-grafana 3000:3000 > /dev/null 2>&1 &
-
     # Setup MinIO port forwarding if using local MinIO
     if [ "$INSTALL_MINIO" = true ]; then
         print_status "Setting up port forwarding for MinIO Console..."
@@ -669,9 +660,16 @@ setup_port_forwarding() {
         print_status "Skipping MinIO port forwarding (using external S3 storage)"
     fi
 
+    print_status "Starting LakeRunner Query API port forwarding..."
+    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-query-api 7101:7101 > /dev/null 2>&1 &
+
+    # Start Grafana port forwarding
+    print_status "Starting Grafana port forwarding..."
+    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-grafana 3000:3000 > /dev/null 2>&1 &
+
     # Wait for LakeRunner services port forwarding to start
     print_status "Waiting for LakeRunner services port forwarding to be ready..."
-    for i in {1..10}; do
+    for i in {1..20}; do
         if curl -s http://localhost:7101 > /dev/null 2>&1 && curl -s http://localhost:3000 > /dev/null 2>&1; then
             print_success "LakeRunner services port forwarding started successfully"
             print_success "Access LakeRunner Query API at: http://localhost:7101"
@@ -681,12 +679,11 @@ setup_port_forwarding() {
         sleep 1
     done
 
-    # If we get here, port forwarding failed
-    print_warning "Some port forwarding may not be working. You can manually run:"
-    echo "  kubectl -n $NAMESPACE port-forward svc/lakerunner-query-api 7101:7101"
-    echo "  kubectl -n $NAMESPACE port-forward svc/lakerunner-grafana 3000:3000"
-    if [ "$INSTALL_MINIO" = true ]; then
-        echo "  kubectl -n $NAMESPACE port-forward svc/minio 9001:9001"
+    if [ $i -eq 10 ]; then
+      # If we get here, port forwarding failed
+      print_warning "Some port forwarding may not be working. You can manually run:"
+      echo "  kubectl -n $NAMESPACE port-forward svc/lakerunner-query-api 7101:7101"
+      echo "  kubectl -n $NAMESPACE port-forward svc/lakerunner-grafana 3000:3000"
     fi
 }
 
@@ -942,11 +939,8 @@ install_otel_demo() {
             # Re-setup mc alias after pod restart
             kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
             kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "logs-raw"
-            echo "added logs-raw webhook"
             kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "metrics-raw" >/dev/null 2>&1
-            echo "added metrics-raw webhook"
             kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "otel-raw" >/dev/null 2>&1
-            echo "added otel-raw webhook"
         else
             print_warning "Using external S3 storage. Please ensure the 'lakerunner' bucket exists."
             echo "The OTEL demo apps will fail if the bucket doesn't exist."
