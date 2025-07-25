@@ -494,11 +494,11 @@ compactMetrics:
   replicas: 1
   resources:
     requests:
-      cpu: 1000m
-      memory: 500Mi
+      cpu: 500m
+      memory: 200Mi
     limits:
-      cpu: 2000m
-      memory: 1Gi
+      cpu: 1000m
+      memory: 400Mi
   autoscaling:
     enabled: false
 
@@ -511,7 +511,7 @@ rollupMetrics:
       memory: 500Mi
     limits:
       cpu: 1000m
-      memory: 1Gi
+      memory: 500Mi
   autoscaling:
     enabled: false
 
