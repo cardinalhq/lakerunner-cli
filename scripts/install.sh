@@ -541,6 +541,7 @@ queryApi:
 
 queryWorker:
   enabled: true
+  initialReplicas: 2 # Pin for local development
   resources:
     requests:
       cpu: 500m
@@ -592,7 +593,7 @@ install_lakerunner() {
     print_status "Installing LakeRunner in namespace: $NAMESPACE"
     
     helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
-        --version 0.2.26 \
+        --version 0.2.27 \
         --values values-local.yaml \
         --namespace $NAMESPACE
     print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
