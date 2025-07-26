@@ -878,7 +878,7 @@ components:
       - name: FLAGD_OFREP_PORT
         value: "8016"
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
-        value: http://$(OTEL_COLLECTOR_NAME):4317
+        value: http://otel-collector:4317
 opentelemetry-collector:
   config:
     receivers:
