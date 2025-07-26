@@ -380,7 +380,7 @@ storageProfiles:
       bucket: "$([ "$INSTALL_MINIO" = true ] && echo "lakerunner" || echo "$S3_BUCKET")"
       use_path_style: true
       use_ssl: $([ "$INSTALL_MINIO" = true ] && echo false || echo true)
-      endpoint: "$([ "$INSTALL_MINIO" = true ] && echo "minio.$NAMESPACE.svc.cluster.local:9000" || echo "$S3_ENDPOINT")"
+      endpoint: "$([ "$INSTALL_MINIO" = true ] && echo "http://minio.$NAMESPACE.svc.cluster.local:9000" || echo "$S3_ENDPOINT")"
 
 # API keys for local development
 apiKeys:
