@@ -808,9 +808,9 @@ ask_install_otel_demo() {
     echo "logs, metrics, and traces to demonstrate LakeRunner in action."
     echo
 
-    get_input "Install OTEL demo apps? (y/N)" "N" "INSTALL_OTEL_DEMO"
+    get_input "Install OTEL demo apps? (Y/n)" "Y" "INSTALL_OTEL_DEMO"
 
-    if [[ "$INSTALL_OTEL_DEMO" =~ ^[Yy]$ ]]; then
+    if [[ "$INSTALL_OTEL_DEMO" =~ ^[Yy]$ ]] || [ -z "$INSTALL_OTEL_DEMO" ]; then
         INSTALL_OTEL_DEMO=true
         print_status "Will install OpenTelemetry demo apps"
     else
@@ -1024,7 +1024,6 @@ install_otel_demo() {
             kubectl rollout restart deployment/minio -n "$NAMESPACE" >/dev/null 2>&1
             sleep 10
             print_success "restarted minio with configured webhooks"
-            echo $S3_BUCKET
             # Re-setup mc alias after pod restart
             kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
             kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "logs-raw" >/dev/null 2>&1
@@ -1035,9 +1034,7 @@ install_otel_demo() {
             print_warning "The OTEL demo apps will fail if the bucket doesn't exist."
             read -p "Press Enter to continue..."
         fi
-
         kubectl get namespace "otel-demo" >/dev/null 2>&1 || kubectl create namespace "otel-demo" >/dev/null 2>&1
-
         # Add OpenTelemetry Helm repository
         helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 2>/dev/null || true
         helm repo update >/dev/null  2>&1
@@ -1045,9 +1042,6 @@ install_otel_demo() {
         helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
             --namespace otel-demo \
             --values generated/otel-demo-values.yaml >/dev/null 2>&1
-
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=frontend-proxy -n otel-demo --timeout=300s >/dev/null 2>&1
-        kubectl port-forward svc/otel-demo-frontend 8080:8080 -n otel-demo
 
         print_success "OpenTelemetry demo apps installed successfully"
         echo
@@ -1059,7 +1053,10 @@ install_otel_demo() {
         echo "3. Processed by LakeRunner"
         echo "4. Available in Grafana dashboard"
         echo
-        echo "To access the demo applications, visit http://localhost:8080"
+        echo "To access the demo applications, run the following:"
+        echo " kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=frontend-proxy -n otel-demo --timeout=300s "
+        echo " kubectl port-forward svc/frontend-proxy 8080:8080 -n otel-demo "
+        echo "Then visit http://localhost:8080"
         echo "The demo apps will continuously generate logs, metrics, and traces"
         echo "that will flow through LakeRunner for processing and analysis."
         echo
