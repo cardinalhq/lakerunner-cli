@@ -609,7 +609,7 @@ install_lakerunner() {
     helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
         --version 0.2.27 \
         --values generated/values-local.yaml \
-        --namespace $NAMESPACE >/dev/null  2>&1
+        --namespace $NAMESPACE
     print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
 }
 
