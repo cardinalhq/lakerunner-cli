@@ -94,7 +94,7 @@ var GetCmd = &cobra.Command{
 	RunE:  runGetCmd,
 }
 
-func runGetCmd(_ *cobra.Command, _ []string) error {
+func runGetCmd(cmd *cobra.Command, _ []string) error {
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		noColor = true
 	}
@@ -227,52 +227,57 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to query logs: %w", err)
 	}
 
-	// Display results
-	fmt.Printf("Querying logs from %s to %s...\n", startTimeStr, endTimeStr)
-	if appName != "" {
-		fmt.Printf("App Filter: resource.service.name = %s\n", appName)
-	}
-	if logLevel != "" {
-		fmt.Printf("Level Filter: level = %s\n", logLevel)
-	}
-	if messageRegex != "" {
-		fmt.Printf("Message Regex Filter: _cardinalhq.message = %s\n", messageRegex)
-	}
-	if len(filters) > 0 || len(regexFilters) > 0 {
-		for _, f := range filters {
-			fmt.Printf("Filter: %s\n", f)
+	// Display results (unless quiet mode is enabled)
+	quiet, _ := cmd.Flags().GetBool("quiet")
+	if !quiet {
+		fmt.Printf("Querying logs from %s to %s...\n", startTimeStr, endTimeStr)
+		if appName != "" {
+			fmt.Printf("App Filter: resource.service.name = %s\n", appName)
 		}
-		for _, f := range regexFilters {
-			fmt.Printf("Regex Filter: %s\n", f)
+		if logLevel != "" {
+			fmt.Printf("Level Filter: level = %s\n", logLevel)
 		}
+		if messageRegex != "" {
+			fmt.Printf("Message Regex Filter: _cardinalhq.message = %s\n", messageRegex)
+		}
+		if len(filters) > 0 || len(regexFilters) > 0 {
+			for _, f := range filters {
+				fmt.Printf("Filter: %s\n", f)
+			}
+			for _, f := range regexFilters {
+				fmt.Printf("Regex Filter: %s\n", f)
+			}
+		}
+		fmt.Printf("Limit: %d results\n", limit)
+		if len(selectedColumns) > 0 {
+			fmt.Printf("Columns: %v\n", selectedColumns)
+		}
+		fmt.Println("---")
 	}
-	fmt.Printf("Limit: %d results\n", limit)
-	if len(selectedColumns) > 0 {
-		fmt.Printf("Columns: %v\n", selectedColumns)
-	}
-	fmt.Println("---")
 
 	responseCount := 0
 	startTime := time.Now()
 
-	// Start a goroutine to show progress
-	progressTicker := time.NewTicker(2 * time.Second)
-	defer progressTicker.Stop()
+	// Start a goroutine to show progress (unless quiet mode is enabled)
+	if !quiet {
+		progressTicker := time.NewTicker(2 * time.Second)
+		defer progressTicker.Stop()
 
-	go func() {
-		for range progressTicker.C {
-			if responseCount == 0 {
-				elapsed := time.Since(startTime)
-				fmt.Fprintf(os.Stderr, "\rWaiting for logs... (%v elapsed)", elapsed.Round(time.Second))
+		go func() {
+			for range progressTicker.C {
+				if responseCount == 0 {
+					elapsed := time.Since(startTime)
+					fmt.Fprintf(os.Stderr, "\rWaiting for logs... (%v elapsed)", elapsed.Round(time.Second))
+				}
 			}
-		}
-	}()
+		}()
+	}
 
 	for response := range responseChan {
 		responseCount++
 
-		// Clear progress line when we get first response
-		if responseCount == 1 {
+		// Clear progress line when we get first response (unless quiet mode is enabled)
+		if responseCount == 1 && !quiet {
 			fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 50))
 		}
 
@@ -406,7 +411,7 @@ func runGetCmd(_ *cobra.Command, _ []string) error {
 		}
 	}
 
-	if responseCount == 0 {
+	if responseCount == 0 && !quiet {
 		fmt.Println("No responses received from the API")
 	}
 
