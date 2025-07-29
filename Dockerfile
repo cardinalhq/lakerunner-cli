@@ -22,5 +22,5 @@ ARG USER_UID=2000
 USER ${USER_UID}:${USER_UID}
 
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
-COPY lakerunner /app/bin/lakerunner-cli
+COPY lakerunner-cli /app/bin/lakerunner-cli
 CMD ["/app/bin/lakerunner-cli"]

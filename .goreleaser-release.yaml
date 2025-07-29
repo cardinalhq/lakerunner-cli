@@ -6,16 +6,26 @@ before:
     - go test -race ./...
 
 release:
-  disable: true
+  disable: false
 
 changelog:
-  disable: true
+  disable: false
 
 archives:
   - id: default
-    # use the "binary" format so GoReleaser skips creating an archive
-    formats:
-      - binary
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else }}{{ .Arch }}{{ end }}
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - env.example
 
 builds:
   - id: lakerunner-cli
@@ -23,6 +33,8 @@ builds:
     binary: lakerunner-cli
     goos:
       - linux
+      - darwin
+      - windows
     goarch:
       - amd64
       - arm64
@@ -31,8 +43,12 @@ builds:
     ldflags:
       - -X main.commit={{ .Commit }}
       - -X main.version={{ .Version }}
+      - -s -w
     flags:
       - -trimpath
+    ignore:
+      - goos: windows
+        goarch: arm64
 
 # Define how to build/push Docker images.
 dockers:
