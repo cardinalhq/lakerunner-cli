@@ -22,6 +22,7 @@ import (
 
 var (
 	verbose bool
+	quiet   bool
 )
 
 var rootCmd = &cobra.Command{
@@ -34,8 +35,14 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
+// IsQuiet returns the value of the quiet flag
+func IsQuiet() bool {
+	return quiet
+}
+
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "suppress informational output")
 
 	rootCmd.AddCommand(logs.LogsCmd)
 	rootCmd.AddCommand(demo.DemoCmd)
