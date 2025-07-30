@@ -97,7 +97,7 @@ homebrew_casks:
     description: "The intuitive CLI to query your S3 logs"
     homepage: "https://github.com/cardinalhq/lakerunner-cli"
     ids:
-      - lakerunner-cli
+      - default
     url:
       template: "https://github.com/cardinalhq/lakerunner-cli/releases/download/{{ .Tag }}/{{ .ArtifactName }}"
     binary: lakerunner-cli
