@@ -34,7 +34,8 @@
 Grab a release from the releases page, or get it via brew
 
 ```
-brew install lakerunner
+brew tap cardinalhq/lakerunner-cli
+brew install lakerunner-cli
 ```
 
 Once you have the CLI installed, you need to set 2 environment variables to Lakerunner. ([Setup guide for Lakerunner](https://docs.cardinalhq.io/lakerunner))
