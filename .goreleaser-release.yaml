@@ -105,6 +105,7 @@ homebrew_casks:
       owner: cardinalhq
       name: homebrew-lakerunner-cli
       branch: main
+      token: "{{ .Env.BREW_GITHUB_TOKEN }}"
     commit_author:
       name: goreleaser-lakerunner-cli
       email: aditya@cardinalhq.io
