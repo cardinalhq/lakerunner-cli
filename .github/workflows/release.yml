@@ -7,7 +7,8 @@ on:
       - "!v*-*"
 
 permissions:
-  contents: write
+  id-token: write
+  contents: read
 
 jobs:
   goreleaser:
