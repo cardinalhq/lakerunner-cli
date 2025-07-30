@@ -97,7 +97,7 @@ images: test-only
 #
 .PHONY: binaries
 binaries: test-only
-	goreleaser release --clean --config .goreleaser-release.yaml
+	goreleaser release --clean --config .goreleaser-release.yaml --skip=docker
 
 #
 # Test targets
