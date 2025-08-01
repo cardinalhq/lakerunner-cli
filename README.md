@@ -16,7 +16,7 @@
 
 ### Why Lakerunner CLI?
 
-- ⚡ Query your S3 logs on your terms — fast, flexible, and free
+- ⚡ Query your S3 logs on your terms. Fast, Flexible and Free.
 - 🛠️ Filter out and extract whatever you need - no forced web UI formats
 - 🧰 Use the entire *nix arsenal to filter, transform and analyze logs
 
