@@ -128,7 +128,6 @@ get_infrastructure_preferences() {
     else
         INSTALL_MINIO=false
         print_status "Will use existing S3-compatible storage"
-        get_input "Enter S3 endpoint URL" "" "S3_ENDPOINT"
         get_input "Enter S3 access key" "" "S3_ACCESS_KEY"
         get_input "Enter S3 secret key" "" "S3_SECRET_KEY"
         get_input "Enter S3 region" "us-east-1" "S3_REGION"
@@ -157,7 +156,6 @@ get_infrastructure_preferences() {
 
             get_input "Enter SQS queue URL" "" "SQS_QUEUE_URL"
             get_input "Enter SQS region" "$S3_REGION" "SQS_REGION"
-            get_input "Enter IAM role ARN (optional, press Enter to skip)" "" "SQS_ROLE_ARN"
 
             echo
             echo "=== SQS Setup Instructions ==="
@@ -393,7 +391,7 @@ storageProfiles:
       bucket: "$([ "$INSTALL_MINIO" = true ] && echo "lakerunner" || echo "$S3_BUCKET")"
       use_path_style: true
       use_ssl: $([ "$INSTALL_MINIO" = true ] && echo false || echo true)
-      endpoint: "$([ "$INSTALL_MINIO" = true ] && echo "http://minio.$NAMESPACE.svc.cluster.local:9000" || echo "$S3_ENDPOINT")"
+      $([ "$INSTALL_MINIO" = true ] && echo "endpoint: \"http://minio.$NAMESPACE.svc.cluster.local:9000\"" || echo "# endpoint: \"\"")
 
 # API keys for local development
 apiKeys:
@@ -451,7 +449,6 @@ pubsub:
     enabled: $([ "$USE_SQS" = true ] && echo "true" || echo "false")
     $([ "$USE_SQS" = true ] && echo "queueURL: \"$SQS_QUEUE_URL\"" || echo "# queueURL: \"\"")
     $([ "$USE_SQS" = true ] && echo "region: \"$SQS_REGION\"" || echo "# region: \"\"")
-    $([ "$USE_SQS" = true ] && [ -n "$SQS_ROLE_ARN" ] && echo "roleARN: \"$SQS_ROLE_ARN\"" || echo "# roleARN: \"\"")
 
 # Reduce resource requirements for local development
 setup:
@@ -703,7 +700,6 @@ display_connection_info() {
         echo
     else
         echo "S3 Storage:"
-        echo "  Endpoint: $S3_ENDPOINT"
         echo "  Bucket: $S3_BUCKET"
         echo "  Region: $S3_REGION"
         echo
@@ -730,9 +726,6 @@ display_connection_info() {
         echo "LakeRunner PubSub SQS Configuration:"
         echo "  Queue URL: $SQS_QUEUE_URL"
         echo "  Region: $SQS_REGION"
-        if [ -n "$SQS_ROLE_ARN" ]; then
-            echo "  Role ARN: $SQS_ROLE_ARN"
-        fi
         echo
     else
             echo "LakeRunner PubSub HTTP Endpoint:"
@@ -839,7 +832,7 @@ display_configuration_summary() {
     if [ "$INSTALL_MINIO" = true ]; then
         echo "  Storage: Local MinIO"
     else
-        echo "  Storage: External S3 ($S3_ENDPOINT/$S3_BUCKET)"
+        echo "  Storage: External S3 ($S3_BUCKET)"
     fi
 
     if [ "$USE_SQS" = true ]; then
