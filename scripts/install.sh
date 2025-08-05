@@ -436,8 +436,6 @@ $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_EXPORTER_OTL
 $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"https://otelhttp.intake.us-east-2.aws.cardinalhq.io\"" || echo "      #   value: \"https://otelhttp.intake.us-east-2.aws.cardinalhq.io\"")
 $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_EXPORTER_OTLP_HEADERS" || echo "    # - name: OTEL_EXPORTER_OTLP_HEADERS")
 $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"x-cardinalhq-api-key=$CARDINAL_API_KEY\"" || echo "      #   value: \"x-cardinalhq-api-key=\"")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_SERVICE_NAME" || echo "    # - name: OTEL_SERVICE_NAME")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"lakerunner\"" || echo "      #   value: \"lakerunner\"")
 
 # PubSub configuration
 pubsub:
