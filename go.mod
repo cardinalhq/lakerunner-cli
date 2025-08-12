@@ -3,7 +3,7 @@ module github.com/lakerunner/cli
 go 1.24.5
 
 require (
-	github.com/cardinalhq/cardinal-ast v0.0.5
+	github.com/cardinalhq/cardinal-ast v0.0.6
 	github.com/cardinalhq/oteltools v0.30.20
 	github.com/google/go-github/v57 v57.0.0
 	github.com/minio/madmin-go/v3 v3.0.110
