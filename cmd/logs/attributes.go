@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cardinalhq/cardinal-ast/core"
 	"github.com/cardinalhq/oteltools/pkg/dateutils"
 	"github.com/lakerunner/cli/internal/api"
 	"github.com/lakerunner/cli/internal/config"
@@ -101,7 +102,7 @@ func runAttributesCmd(_ *cobra.Command, targets []string) error {
 	defer cancel()
 
 	// Create filter based on whether filters are provided
-	var filterObj *api.Filter
+	var filterObj core.QueryClause
 
 	// Check if we have any filters (including shorthand flags)
 	hasFilters := len(attributesFilters) > 0 || len(attributesRegexFilters) > 0 || attributesAppName != "" || attributesLogLevel != ""
@@ -135,7 +136,7 @@ func runAttributesCmd(_ *cobra.Command, targets []string) error {
 
 			// If we have additional filters, create nested filter
 			if len(attributesFilters) > 1 || len(attributesRegexFilters) > 0 {
-				allFilters := []*api.Filter{filterObj}
+				allFilters := []core.QueryClause{filterObj}
 
 				// Add remaining filters
 				for i := 1; i < len(attributesFilters); i++ {
@@ -163,7 +164,7 @@ func runAttributesCmd(_ *cobra.Command, targets []string) error {
 				}
 
 				if len(allFilters) > 1 {
-					filterObj = api.CreateNestedFilter(allFilters...)
+					filterObj = api.CreateAndFilter(allFilters...)
 				}
 			}
 		} else {
@@ -177,7 +178,7 @@ func runAttributesCmd(_ *cobra.Command, targets []string) error {
 
 			// If we have additional regex filters, create nested filter
 			if len(attributesRegexFilters) > 1 {
-				allFilters := []*api.Filter{filterObj}
+				allFilters := []core.QueryClause{filterObj}
 
 				for i := 1; i < len(attributesRegexFilters); i++ {
 					parts := strings.SplitN(attributesRegexFilters[i], ":", 2)
@@ -189,7 +190,7 @@ func runAttributesCmd(_ *cobra.Command, targets []string) error {
 				}
 
 				if len(allFilters) > 1 {
-					filterObj = api.CreateNestedFilter(allFilters...)
+					filterObj = api.CreateAndFilter(allFilters...)
 				}
 			}
 		}
@@ -199,7 +200,7 @@ func runAttributesCmd(_ *cobra.Command, targets []string) error {
 	expression := api.CreateExpression("logs", 1000, filterObj, nil)
 
 	// Send the expression directly, not wrapped in GraphRequest
-	req := &expression
+	req := expression
 
 	// Call the tags endpoint
 	responseChan, err := client.QueryTags(ctx, req, params)
@@ -297,7 +298,7 @@ func runTagValuesCmd(_ *cobra.Command, args []string) error {
 	defer cancel()
 
 	// Create filter based on whether filters are provided
-	var filterObj *api.Filter
+	var filterObj core.QueryClause
 
 	// Check if we have any filters (including shorthand flags)
 	hasFilters := len(attributesFilters) > 0 || attributesAppName != "" || attributesLogLevel != ""
@@ -325,7 +326,7 @@ func runTagValuesCmd(_ *cobra.Command, args []string) error {
 
 			// If we have additional filters, create nested filter
 			if len(attributesFilters) > 1 {
-				allFilters := []*api.Filter{filterObj}
+				allFilters := []core.QueryClause{filterObj}
 
 				// Add remaining filters
 				for i := 1; i < len(attributesFilters); i++ {
@@ -338,7 +339,7 @@ func runTagValuesCmd(_ *cobra.Command, args []string) error {
 				}
 
 				if len(allFilters) > 1 {
-					filterObj = api.CreateNestedFilter(allFilters...)
+					filterObj = api.CreateAndFilter(allFilters...)
 				}
 			}
 		}
@@ -346,7 +347,7 @@ func runTagValuesCmd(_ *cobra.Command, args []string) error {
 
 	// Create expression for tag values endpoint (like frontend)
 	expression := api.CreateExpression("logs", 1000, filterObj, nil)
-	req := &expression
+	req := expression
 
 	// Call the tags endpoint with query parameters
 	responseChan, err := client.QueryTags(ctx, req, params)

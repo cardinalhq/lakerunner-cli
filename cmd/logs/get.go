@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cardinalhq/cardinal-ast/core"
+	"github.com/cardinalhq/cardinal-ast/parsers/lucene"
 	"github.com/cardinalhq/oteltools/pkg/dateutils"
 	"github.com/lakerunner/cli/internal/api"
 	"github.com/lakerunner/cli/internal/config"
@@ -73,6 +75,7 @@ var (
 	appName      string
 	logLevel     string
 	columns      string
+	luceneQuery  string
 )
 
 func init() {
@@ -86,6 +89,7 @@ func init() {
 	GetCmd.Flags().StringVarP(&appName, "app", "a", "", "Filter logs by application/service name")
 	GetCmd.Flags().StringVarP(&logLevel, "level", "l", "", "Filter logs by log level (e.g., ERROR, INFO, DEBUG, WARN)")
 	GetCmd.Flags().StringVarP(&columns, "columns", "c", "", "Comma or space separated columns to display (e.g., 'timestamp,level,message' or 'timestamp level message')")
+	GetCmd.Flags().StringVar(&luceneQuery, "lucene", "", "Parse Lucene query syntax (e.g., 'level:ERROR AND service:web', 'pod:nginx AND \"error message\"')")
 }
 
 var GetCmd = &cobra.Command{
@@ -132,8 +136,76 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 	startTimeStr := time.UnixMilli(startMs).UTC().Format(time.RFC3339)
 	endTimeStr := time.UnixMilli(endMs).UTC().Format(time.RFC3339)
 
+	// Check if Lucene query is provided
+	if luceneQuery != "" {
+		// Parse Lucene query to AST
+		baseExpr, err := lucene.MapLuceneQueryToCardinal(luceneQuery)
+		if err != nil {
+			return fmt.Errorf("failed to parse Lucene query '%s': %w", luceneQuery, err)
+		}
+
+		if baseExpr == nil {
+			return fmt.Errorf("failed to parse Lucene query '%s': no result generated", luceneQuery)
+		}
+
+		if baseExpr.Filter == nil {
+			return fmt.Errorf("failed to parse Lucene query '%s': no filter generated", luceneQuery)
+		}
+
+		// Override limit and order if specified in flags
+		if baseExpr.Limit == nil {
+			baseExpr.Limit = &limit
+		}
+		if baseExpr.Order == nil {
+			order := "DESC"
+			baseExpr.Order = &order
+		}
+
+		// Create expression using the parsed AST
+		expression := &core.BaseExpr{
+			ID:            "lucene_query",
+			Dataset:       "logs",
+			Filter:        baseExpr.Filter,
+			Limit:         baseExpr.Limit,
+			Order:         baseExpr.Order,
+			ReturnResults: true,
+		}
+
+		expressions := map[string]*core.BaseExpr{
+			"a": expression,
+		}
+
+		req := api.CreateGraphRequest(expressions)
+		params := api.CreateQueryParams(startTimeStr, endTimeStr, "", "")
+
+		// Create context with timeout
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		responseChan, err := client.QueryGraph(ctx, req, params)
+		if err != nil {
+			return fmt.Errorf("failed to query logs: %w", err)
+		}
+
+		// Display results
+		quiet, _ := cmd.Flags().GetBool("quiet")
+		if !quiet {
+			fmt.Printf("Querying logs with Lucene query: %s\n", luceneQuery)
+			fmt.Printf("Time range: %s to %s\n", startTimeStr, endTimeStr)
+			fmt.Printf("Limit: %d results\n", *baseExpr.Limit)
+			if len(selectedColumns) > 0 {
+				fmt.Printf("Columns: %v\n", selectedColumns)
+			}
+			fmt.Println("---")
+		}
+
+		// Process responses using the helper function
+		return processLogResponses(responseChan, selectedColumns, noColor, quiet, *baseExpr.Limit)
+	}
+
+	// Use existing manual filter building logic when Lucene is not provided
 	// Start with default filter for resource.service.name
-	var filterObj *api.Filter
+	var filterObj core.QueryClause
 
 	// If app flag is provided, use it to filter by resource.service.name
 	if appName != "" {
@@ -146,7 +218,7 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 		levelFilter := api.CreateFilter("_cardinalhq.level", "eq", "string", []string{logLevel})
 
 		if appName != "" {
-			filterObj = api.CreateNestedFilter(filterObj, levelFilter)
+			filterObj = api.CreateAndFilter(filterObj, levelFilter)
 		} else {
 			filterObj = levelFilter
 		}
@@ -157,14 +229,14 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 		messageFilter := api.CreateFilter("_cardinalhq.message", "regex", "string", []string{messageRegex})
 
 		if filterObj != nil {
-			filterObj = api.CreateNestedFilter(filterObj, messageFilter)
+			filterObj = api.CreateAndFilter(filterObj, messageFilter)
 		} else {
 			filterObj = messageFilter
 		}
 	}
 
 	// Collect all filters
-	allFilters := []*api.Filter{}
+	allFilters := []core.QueryClause{}
 
 	// Add multiple filters if provided
 	for _, f := range filters {
@@ -196,7 +268,7 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 	if len(allFilters) > 0 {
 		// Check if any filter is for resource.service.name and replace default
 		for i, f := range allFilters {
-			if f.K == "resource.service.name" {
+			if f.(*core.Filter).K == "resource.service.name" {
 				filterObj = f
 				allFilters = append(allFilters[:i], allFilters[i+1:]...)
 				break
@@ -205,13 +277,13 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 
 		// Add remaining filters as nested conditions
 		if len(allFilters) > 0 {
-			allFilters = append([]*api.Filter{filterObj}, allFilters...)
-			filterObj = api.CreateNestedFilter(allFilters...)
+			allFilters = append([]core.QueryClause{filterObj}, allFilters...)
+			filterObj = api.CreateAndFilter(allFilters...)
 		}
 	}
 
 	expression := api.CreateExpression("logs", limit, filterObj, nil)
-	expressions := map[string]api.Expression{
+	expressions := map[string]*core.BaseExpr{
 		"a": expression,
 	}
 
@@ -255,6 +327,12 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 		fmt.Println("---")
 	}
 
+	// Process responses using the helper function
+	return processLogResponses(responseChan, selectedColumns, noColor, quiet, limit)
+}
+
+// processLogResponses handles the response processing logic for both Lucene and manual filter queries
+func processLogResponses(responseChan <-chan api.LogsResponse, selectedColumns []string, noColor, quiet bool, limit int) error {
 	responseCount := 0
 	startTime := time.Now()
 

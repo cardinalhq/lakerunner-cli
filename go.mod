@@ -1,10 +1,10 @@
 module github.com/lakerunner/cli
 
-go 1.24.0
-
-toolchain go1.24.4
+go 1.24.5
 
 require (
+	github.com/cardinalhq/cardinal-ast v0.0.6
+	github.com/cardinalhq/oteltools v0.30.20
 	github.com/google/go-github/v57 v57.0.0
 	github.com/minio/madmin-go/v3 v3.0.110
 	github.com/minio/minio-go/v7 v7.0.94
@@ -75,6 +75,7 @@ require (
 	github.com/anchore/go-logger v0.0.0-20241005132348-65b4486fbb28 // indirect
 	github.com/anchore/go-macholibre v0.0.0-20220308212642-53e6d0aaf6fb // indirect
 	github.com/anchore/quill v0.5.1 // indirect
+	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/apache/skywalking-eyes v0.7.0 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/ashanbrown/forbidigo v1.6.0 // indirect
@@ -126,7 +127,6 @@ require (
 	github.com/caarlos0/go-shellwords v1.0.12 // indirect
 	github.com/caarlos0/go-version v0.2.1 // indirect
 	github.com/caarlos0/log v0.5.1 // indirect
-	github.com/cardinalhq/oteltools v0.30.20 // indirect
 	github.com/carlmjohnson/versioninfo v0.22.5 // indirect
 	github.com/catenacyber/perfsprint v0.8.2 // indirect
 	github.com/cavaliergopher/cpio v1.0.1 // indirect
