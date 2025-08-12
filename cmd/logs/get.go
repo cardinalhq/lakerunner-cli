@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cardinalhq/cardinal-ast/core"
 	"github.com/cardinalhq/oteltools/pkg/dateutils"
 	"github.com/lakerunner/cli/internal/api"
 	"github.com/lakerunner/cli/internal/config"
@@ -133,7 +134,7 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 	endTimeStr := time.UnixMilli(endMs).UTC().Format(time.RFC3339)
 
 	// Start with default filter for resource.service.name
-	var filterObj *api.Filter
+	var filterObj core.QueryClause
 
 	// If app flag is provided, use it to filter by resource.service.name
 	if appName != "" {
@@ -146,7 +147,7 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 		levelFilter := api.CreateFilter("_cardinalhq.level", "eq", "string", []string{logLevel})
 
 		if appName != "" {
-			filterObj = api.CreateNestedFilter(filterObj, levelFilter)
+			filterObj = api.CreateAndFilter(filterObj, levelFilter)
 		} else {
 			filterObj = levelFilter
 		}
@@ -157,14 +158,14 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 		messageFilter := api.CreateFilter("_cardinalhq.message", "regex", "string", []string{messageRegex})
 
 		if filterObj != nil {
-			filterObj = api.CreateNestedFilter(filterObj, messageFilter)
+			filterObj = api.CreateAndFilter(filterObj, messageFilter)
 		} else {
 			filterObj = messageFilter
 		}
 	}
 
 	// Collect all filters
-	allFilters := []*api.Filter{}
+	allFilters := []core.QueryClause{}
 
 	// Add multiple filters if provided
 	for _, f := range filters {
@@ -196,7 +197,7 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 	if len(allFilters) > 0 {
 		// Check if any filter is for resource.service.name and replace default
 		for i, f := range allFilters {
-			if f.K == "resource.service.name" {
+			if f.(*core.Filter).K == "resource.service.name" {
 				filterObj = f
 				allFilters = append(allFilters[:i], allFilters[i+1:]...)
 				break
@@ -205,13 +206,13 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 
 		// Add remaining filters as nested conditions
 		if len(allFilters) > 0 {
-			allFilters = append([]*api.Filter{filterObj}, allFilters...)
-			filterObj = api.CreateNestedFilter(allFilters...)
+			allFilters = append([]core.QueryClause{filterObj}, allFilters...)
+			filterObj = api.CreateAndFilter(allFilters...)
 		}
 	}
 
 	expression := api.CreateExpression("logs", limit, filterObj, nil)
-	expressions := map[string]api.Expression{
+	expressions := map[string]*core.BaseExpr{
 		"a": expression,
 	}
 

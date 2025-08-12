@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cardinalhq/cardinal-ast/core"
 	"github.com/lakerunner/cli/internal/config"
 )
 
@@ -36,69 +37,16 @@ type Client struct {
 }
 
 // GraphRequest represents a request to the graph endpoint
-type GraphRequest struct {
-	BaseExpressions map[string]Expression `json:"baseExpressions"`
-}
+// Now uses core.ASTInput directly
+type GraphRequest = core.ASTInput
 
 // Expression represents an expression in a graph request
-type Expression struct {
-	Dataset       string                 `json:"dataset"`
-	Limit         int                    `json:"limit"`
-	Order         string                 `json:"order"`
-	ReturnResults bool                   `json:"returnResults"`
-	Filter        *Filter                `json:"filter,omitempty"`
-	Chart         map[string]interface{} `json:"chart,omitempty"`
-}
+// Now uses core.BaseExpr directly
+type Expression = core.BaseExpr
 
 // Filter represents a filter for log queries
-type Filter struct {
-	K         string   `json:"k,omitempty"`
-	V         []string `json:"v,omitempty"`
-	Op        string   `json:"op,omitempty"`
-	DataType  string   `json:"dataType,omitempty"`
-	Extracted bool     `json:"extracted,omitempty"`
-	Computed  bool     `json:"computed,omitempty"`
-	// For nested filters - use map for dynamic keys
-	Filters map[string]*Filter `json:"-"`
-	// MarshalJSON will handle the dynamic filter keys
-}
-
-// MarshalJSON implements custom JSON marshaling for Filter
-func (f *Filter) MarshalJSON() ([]byte, error) {
-	type Alias Filter // Avoid recursive marshaling
-
-	// Create a map to hold all fields
-	result := make(map[string]interface{})
-
-	// Add the base fields
-	if f.K != "" {
-		result["k"] = f.K
-	}
-	if len(f.V) > 0 {
-		result["v"] = f.V
-	}
-	if f.Op != "" {
-		result["op"] = f.Op
-	}
-	if f.DataType != "" {
-		result["dataType"] = f.DataType
-	}
-	if f.Extracted {
-		result["extracted"] = f.Extracted
-	}
-	if f.Computed {
-		result["computed"] = f.Computed
-	}
-
-	// Add dynamic filters
-	if f.Filters != nil {
-		for key, filter := range f.Filters {
-			result[key] = filter
-		}
-	}
-
-	return json.Marshal(result)
-}
+// Now uses core.Filter directly
+type Filter = core.Filter
 
 // LogsResponse represents a response from the logs endpoint
 type LogsResponse struct {
@@ -329,18 +277,21 @@ func (c *Client) QueryTags(ctx context.Context, req *Expression, params QueryPar
 // Helper functions for creating common request types
 
 // CreateGraphRequest creates a graph request with expressions
-func CreateGraphRequest(expressions map[string]Expression) *GraphRequest {
+func CreateGraphRequest(expressions map[string]*core.BaseExpr) *GraphRequest {
 	return &GraphRequest{
 		BaseExpressions: expressions,
+		Formulae:        []string{}, // Empty formulae for now
 	}
 }
 
 // CreateExpression creates an expression for graph queries
-func CreateExpression(dataset string, limit int, filter *Filter, chart map[string]interface{}) Expression {
-	return Expression{
+func CreateExpression(dataset string, limit int, filter core.QueryClause, chart *core.ChartOptions) *core.BaseExpr {
+	order := "DESC"
+	return &core.BaseExpr{
+		ID:            "logs_query",
 		Dataset:       dataset,
-		Limit:         limit,
-		Order:         "DESC",
+		Limit:         &limit,
+		Order:         &order,
 		ReturnResults: true,
 		Filter:        filter,
 		Chart:         chart,
@@ -348,8 +299,8 @@ func CreateExpression(dataset string, limit int, filter *Filter, chart map[strin
 }
 
 // CreateFilter creates a filter with the specified parameters
-func CreateFilter(key, operation, dataType string, values []string) *Filter {
-	return &Filter{
+func CreateFilter(key, operation, dataType string, values []string) *core.Filter {
+	return &core.Filter{
 		K:         key,
 		V:         values,
 		Op:        operation,
@@ -359,8 +310,8 @@ func CreateFilter(key, operation, dataType string, values []string) *Filter {
 	}
 }
 
-// CreateNestedFilter creates a filter with multiple conditions using AND logic
-func CreateNestedFilter(filters ...*Filter) *Filter {
+// CreateAndFilter creates a logical AND combination of multiple filters
+func CreateAndFilter(filters ...core.QueryClause) core.QueryClause {
 	if len(filters) == 0 {
 		return nil
 	}
@@ -368,16 +319,30 @@ func CreateNestedFilter(filters ...*Filter) *Filter {
 		return filters[0]
 	}
 
-	// Create nested filter structure
-	result := &Filter{
-		Op:      "and",
-		Filters: make(map[string]*Filter),
+	// Build tree: (filter1 AND (filter2 AND filter3))
+	result := &core.BinaryClause{
+		Op: "and",
+		Q1: filters[0],
+		Q2: CreateAndFilter(filters[1:]...),
 	}
 
-	// Add filters dynamically with q1, q2, q3, etc.
-	for i, filter := range filters {
-		key := fmt.Sprintf("q%d", i+1)
-		result.Filters[key] = filter
+	return result
+}
+
+// CreateOrFilter creates a logical OR combination of multiple filters
+func CreateOrFilter(filters ...core.QueryClause) core.QueryClause {
+	if len(filters) == 0 {
+		return nil
+	}
+	if len(filters) == 1 {
+		return filters[0]
+	}
+
+	// Build tree: (filter1 OR (filter2 OR filter3))
+	result := &core.BinaryClause{
+		Op: "or",
+		Q1: filters[0],
+		Q2: CreateOrFilter(filters[1:]...),
 	}
 
 	return result
