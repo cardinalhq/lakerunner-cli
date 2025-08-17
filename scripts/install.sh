@@ -992,6 +992,47 @@ EOF
     print_success "generated/otel-demo-values.yaml generated successfully"
 }
 
+setup_minio_webhooks() {
+    if [ "$INSTALL_MINIO" = true ]; then
+        print_status "Setting up MinIO webhooks for LakeRunner event notifications..."
+        
+        # Check if lakerunner bucket exists and create if needed
+        MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        S3_BUCKET=${S3_BUCKET:-lakerunner}
+        
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
+        
+        if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/$S3_BUCKET >/dev/null 2>&1; then
+            print_warning "lakerunner bucket does not exist. Creating it..."
+            kubectl exec -n "$NAMESPACE" deployment/minio -- mc mb minio/lakerunner
+            print_success "lakerunner bucket created successfully"
+        else
+            print_success "lakerunner bucket already exists"
+        fi
+        
+        # Configure webhook notifications
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc admin config set minio notify_webhook:create_object endpoint="http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/" >/dev/null 2>&1
+        print_success "Created webhook to pubsub, restarting minio pod to apply configuration"
+        kubectl rollout restart deployment/minio -n "$NAMESPACE" >/dev/null 2>&1
+        sleep 10
+        print_success "restarted minio with configured webhooks"
+        
+        # Re-setup mc alias after pod restart
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
+        
+        # Add event notifications for different telemetry types
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "logs-raw" >/dev/null 2>&1
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "metrics-raw" >/dev/null 2>&1
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "traces-raw" >/dev/null 2>&1
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "otel-raw" >/dev/null 2>&1
+        
+        print_success "MinIO webhooks configured successfully for LakeRunner event notifications"
+    else
+        print_status "Skipping MinIO webhook setup (using external S3 storage)"
+    fi
+}
+
 install_otel_demo() {
     if [ "$INSTALL_OTEL_DEMO" = true ]; then
         print_status "Installing OpenTelemetry demo apps..."
@@ -1001,31 +1042,19 @@ install_otel_demo() {
             print_status "Checking if lakerunner bucket exists in MinIO..."
             MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
             MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
-            S3_BUCKET=${S3_BUCKET:-lakerunner}
             kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
-            if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/$S3_BUCKET >/dev/null 2>&1; then
-                print_warning "lakerunner bucket does not exist. Creating it..."
-                kubectl exec -n "$NAMESPACE" deployment/minio -- mc mb minio/lakerunner
-                print_success "lakerunner bucket created successfully"
-            else
-                print_success "lakerunner bucket already exists"
+            if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/lakerunner >/dev/null 2>&1; then
+                print_error "lakerunner bucket does not exist. MinIO setup may have failed."
+                exit 1
             fi
-            kubectl exec -n "$NAMESPACE" deployment/minio -- mc admin config set minio notify_webhook:create_object endpoint="http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/" >/dev/null 2>&1
-            print_success "Created webhook to pubsub, restarting minio pod to apply configuration"
-            kubectl rollout restart deployment/minio -n "$NAMESPACE" >/dev/null 2>&1
-            sleep 10
-            print_success "restarted minio with configured webhooks"
-            # Re-setup mc alias after pod restart
-            kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
-            kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "logs-raw" >/dev/null 2>&1
-            kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "metrics-raw" >/dev/null 2>&1
-            kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "otel-raw" >/dev/null 2>&1
         else
             print_warning "Using external S3 storage. Please ensure the 'lakerunner' bucket exists."
             print_warning "The OTEL demo apps will fail if the bucket doesn't exist."
             read -p "Press Enter to continue..."
         fi
+        
         kubectl get namespace "otel-demo" >/dev/null 2>&1 || kubectl create namespace "otel-demo" >/dev/null 2>&1
+        
         # Add OpenTelemetry Helm repository
         helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 2>/dev/null || true
         helm repo update >/dev/null  2>&1
@@ -1093,6 +1122,9 @@ main() {
     wait_for_services
     
     setup_port_forwarding
+
+    # Setup MinIO webhooks for LakeRunner event notifications (required for LakeRunner to function)
+    setup_minio_webhooks
 
     generate_otel_demo_values
 
