@@ -42,7 +42,7 @@ const (
 )
 
 // getColorForLevel returns the appropriate color for a log level
-func getColorForLevel(level string) string {
+func getColorForLevel(level string, noColor bool) string {
 	if noColor {
 		return ""
 	}
@@ -69,7 +69,6 @@ var (
 	regexFilters []string
 	startTime    string
 	endTime      string
-	noColor      bool
 	appName      string
 	logLevel     string
 	columns      string
@@ -82,7 +81,6 @@ func init() {
 	GetCmd.Flags().StringSliceVarP(&regexFilters, "regex", "r", []string{}, "Regex filter in format 'key:value' (can be used multiple times)")
 	GetCmd.Flags().StringVarP(&startTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	GetCmd.Flags().StringVarP(&endTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
-	GetCmd.Flags().BoolVar(&noColor, "no-color", false, "Disable colored output")
 	GetCmd.Flags().StringVarP(&appName, "app", "a", "", "Filter logs by application/service name")
 	GetCmd.Flags().StringVarP(&logLevel, "level", "l", "", "Filter logs by log level (e.g., ERROR, INFO, DEBUG, WARN)")
 	GetCmd.Flags().StringVarP(&columns, "columns", "c", "", "Comma or space separated columns to display (e.g., 'timestamp,level,message' or 'timestamp level message')")
@@ -94,7 +92,8 @@ var GetCmd = &cobra.Command{
 	RunE:  runGetCmd,
 }
 
-func runGetCmd(cmd *cobra.Command, _ []string) error {
+func runGetCmd(cmdObj *cobra.Command, _ []string) error {
+	noColor, _ := cmdObj.Flags().GetBool("no-color")
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
 		noColor = true
 	}
@@ -116,7 +115,9 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	cfg, err := config.Load()
+	endpoint, _ := cmdObj.Flags().GetString("endpoint")
+	apiKey, _ := cmdObj.Flags().GetString("api-key")
+	cfg, err := config.LoadWithFlags(endpoint, apiKey)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -228,7 +229,7 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Display results (unless quiet mode is enabled)
-	quiet, _ := cmd.Flags().GetBool("quiet")
+	quiet, _ := cmdObj.Flags().GetBool("quiet")
 	if !quiet {
 		fmt.Printf("Querying logs from %s to %s...\n", startTimeStr, endTimeStr)
 		if appName != "" {
@@ -337,7 +338,7 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 						color = colorBlue
 					case "level":
 						value = logLevel
-						color = getColorForLevel(logLevel)
+						color = getColorForLevel(logLevel, noColor)
 					case "message":
 						value = logMessage
 						color = colorReset
@@ -386,7 +387,7 @@ func runGetCmd(cmd *cobra.Command, _ []string) error {
 
 				fmt.Println(strings.Join(outputParts, " "))
 			} else {
-				levelColor := getColorForLevel(logLevel)
+				levelColor := getColorForLevel(logLevel, noColor)
 				timestampColor := colorBlue
 				serviceColor := colorCyan
 				podColor := colorPurple
