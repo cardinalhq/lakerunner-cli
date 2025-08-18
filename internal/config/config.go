@@ -32,6 +32,15 @@ func Load() (*Config, error) {
 	return cfg, cfg.Validate()
 }
 
+// LoadWithFlags loads configuration with optional flag overrides
+func LoadWithFlags(endpointFlag, apiKeyFlag string) (*Config, error) {
+	cfg := &Config{
+		LAKERUNNER_QUERY_URL: getEnvOrFlag("LAKERUNNER_QUERY_URL", endpointFlag),
+		LAKERUNNER_API_KEY:   getEnvOrFlag("LAKERUNNER_API_KEY", apiKeyFlag),
+	}
+	return cfg, cfg.Validate()
+}
+
 func getEnv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -39,12 +48,20 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
+// getEnvOrFlag returns flag value if provided, otherwise falls back to environment variable
+func getEnvOrFlag(envKey, flagValue string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return getEnv(envKey, "")
+}
+
 func (c *Config) Validate() error {
 	if c.LAKERUNNER_QUERY_URL == "" {
-		return fmt.Errorf("LAKERUNNER_QUERY_URL environment variable is required")
+		return fmt.Errorf("API endpoint is required: set LAKERUNNER_QUERY_URL environment variable or use --endpoint flag")
 	}
 	if c.LAKERUNNER_API_KEY == "" {
-		return fmt.Errorf("LAKERUNNER_API_KEY environment variable is required")
+		return fmt.Errorf("API key is required: set LAKERUNNER_API_KEY environment variable or use --api-key flag")
 	}
 	return nil
 }

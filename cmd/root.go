@@ -20,10 +20,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	verbose bool
-	quiet   bool
-)
 
 var rootCmd = &cobra.Command{
 	Use:   "lakerunner",
@@ -35,14 +31,13 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
-// IsQuiet returns the value of the quiet flag
-func IsQuiet() bool {
-	return quiet
-}
 
 func init() {
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "verbose output")
-	rootCmd.PersistentFlags().BoolVarP(&quiet, "quiet", "q", false, "suppress informational output")
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
+	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress informational output")
+	rootCmd.PersistentFlags().Bool("no-color", false, "disable colored output")
+	rootCmd.PersistentFlags().String("endpoint", "", "API endpoint URL (overrides LAKERUNNER_QUERY_URL)")
+	rootCmd.PersistentFlags().String("api-key", "", "API key (overrides LAKERUNNER_API_KEY)")
 
 	rootCmd.AddCommand(logs.LogsCmd)
 	rootCmd.AddCommand(demo.DemoCmd)

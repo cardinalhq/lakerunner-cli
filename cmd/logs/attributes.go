@@ -34,7 +34,6 @@ var (
 	attributesRegexFilters []string
 	attributesStartTime    string
 	attributesEndTime      string
-	attributesNoColor      bool
 	attributesAppName      string
 	attributesLogLevel     string
 )
@@ -60,24 +59,25 @@ func init() {
 	AttributesCmd.Flags().StringSliceVarP(&attributesRegexFilters, "regex", "r", []string{}, "Regex filter in format 'key:value' (can be used multiple times)")
 	AttributesCmd.Flags().StringVarP(&attributesStartTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	AttributesCmd.Flags().StringVarP(&attributesEndTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
-	AttributesCmd.Flags().BoolVar(&attributesNoColor, "no-color", false, "Disable colored output")
 	AttributesCmd.Flags().StringVarP(&attributesAppName, "app", "a", "", "Filter by application/service name")
 	AttributesCmd.Flags().StringVarP(&attributesLogLevel, "level", "l", "", "Filter by log level (e.g., ERROR, INFO, DEBUG, WARN)")
 
 	TagValuesCmd.Flags().StringSliceVarP(&attributesFilters, "filter", "f", []string{}, "Filter in format 'key:value' (can be used multiple times)")
 	TagValuesCmd.Flags().StringVarP(&attributesStartTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	TagValuesCmd.Flags().StringVarP(&attributesEndTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
-	TagValuesCmd.Flags().BoolVar(&attributesNoColor, "no-color", false, "Disable colored output")
 	TagValuesCmd.Flags().StringVarP(&attributesAppName, "app", "a", "", "Filter by application/service name")
 	TagValuesCmd.Flags().StringVarP(&attributesLogLevel, "level", "l", "", "Filter by log level (e.g., ERROR, INFO, DEBUG, WARN)")
 }
 
-func runAttributesCmd(_ *cobra.Command, targets []string) error {
+func runAttributesCmd(cmdObj *cobra.Command, targets []string) error {
+	noColor, _ := cmdObj.Flags().GetBool("no-color")
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		attributesNoColor = true
+		noColor = true
 	}
 
-	cfg, err := config.Load()
+	endpoint, _ := cmdObj.Flags().GetString("endpoint")
+	apiKey, _ := cmdObj.Flags().GetString("api-key")
+	cfg, err := config.LoadWithFlags(endpoint, apiKey)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -246,7 +246,7 @@ func runAttributesCmd(_ *cobra.Command, targets []string) error {
 				if tagName != "" && !tagsSet[tagName] {
 					tagsSet[tagName] = true
 
-					if attributesNoColor {
+					if noColor {
 						fmt.Printf("%s\n", tagName)
 					} else {
 						fmt.Printf("\033[36m%s\033[0m\n", tagName)
@@ -265,12 +265,15 @@ func runAttributesCmd(_ *cobra.Command, targets []string) error {
 	return nil
 }
 
-func runTagValuesCmd(_ *cobra.Command, args []string) error {
+func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
+	noColor, _ := cmdObj.Flags().GetBool("no-color")
 	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		attributesNoColor = true
+		noColor = true
 	}
 
-	cfg, err := config.Load()
+	endpoint, _ := cmdObj.Flags().GetString("endpoint")
+	apiKey, _ := cmdObj.Flags().GetString("api-key")
+	cfg, err := config.LoadWithFlags(endpoint, apiKey)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}
@@ -385,7 +388,7 @@ func runTagValuesCmd(_ *cobra.Command, args []string) error {
 				if tagValue != "" && !valuesSet[tagValue] {
 					valuesSet[tagValue] = true
 
-					if attributesNoColor {
+					if noColor {
 						fmt.Printf("%s\n", tagValue)
 					} else {
 						fmt.Printf("\033[36m%s\033[0m\n", tagValue)
