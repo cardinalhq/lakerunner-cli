@@ -956,6 +956,14 @@ opentelemetry-collector:
           endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
           s3_force_path_style: true
           disable_ssl: true
+      awss3/traces:
+        marshaler: otlp_proto
+        s3uploader:
+          s3_bucket: "lakerunner"
+          s3_prefix: "traces-raw"
+          endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
+          s3_force_path_style: true
+          disable_ssl: true
     service:
       pipelines:
         metrics:
@@ -970,7 +978,7 @@ opentelemetry-collector:
           exporters: [awss3/logs]
         traces:
           receivers: [otlp]
-          exporters: [spanmetrics]
+          exporters: [spanmetrics, awss3/traces]
       telemetry:
         metrics:
           level: none
