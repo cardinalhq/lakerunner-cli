@@ -178,37 +178,44 @@ get_infrastructure_preferences() {
 get_telemetry_preferences() {
     echo
     echo "=== Telemetry Configuration ==="
-    echo "LakeRunner can process logs, metrics, or both."
+    echo "LakeRunner can process logs, metrics, and traces."
     echo "Choose which telemetry types you want to enable:"
-    echo "1. Logs only"
-    echo "2. Metrics only"
-    echo "3. Both logs and metrics (default)"
     echo
 
-    get_input "Select telemetry type (1/2/3)" "3" "TELEMETRY_CHOICE"
+    get_input "Enable logs processing? (Y/n)" "Y" "ENABLE_LOGS_CHOICE"
+    if [[ "$ENABLE_LOGS_CHOICE" =~ ^[Yy]$ ]] || [ -z "$ENABLE_LOGS_CHOICE" ]; then
+        ENABLE_LOGS=true
+        print_status "Will enable logs processing"
+    else
+        ENABLE_LOGS=false
+        print_status "Will disable logs processing"
+    fi
 
-    case "$TELEMETRY_CHOICE" in
-        1)
-            ENABLE_LOGS=true
-            ENABLE_METRICS=false
-            print_status "Will enable logs only"
-            ;;
-        2)
-            ENABLE_LOGS=false
-            ENABLE_METRICS=true
-            print_status "Will enable metrics only"
-            ;;
-        3|"")
-            ENABLE_LOGS=true
-            ENABLE_METRICS=true
-            print_status "Will enable both logs and metrics"
-            ;;
-        *)
-            print_error "Invalid choice. Defaulting to both logs and metrics."
-            ENABLE_LOGS=true
-            ENABLE_METRICS=true
-            ;;
-    esac
+    get_input "Enable metrics processing? (Y/n)" "Y" "ENABLE_METRICS_CHOICE"
+    if [[ "$ENABLE_METRICS_CHOICE" =~ ^[Yy]$ ]] || [ -z "$ENABLE_METRICS_CHOICE" ]; then
+        ENABLE_METRICS=true
+        print_status "Will enable metrics processing"
+    else
+        ENABLE_METRICS=false
+        print_status "Will disable metrics processing"
+    fi
+
+    get_input "Enable traces processing? (Y/n)" "Y" "ENABLE_TRACES_CHOICE"
+    if [[ "$ENABLE_TRACES_CHOICE" =~ ^[Yy]$ ]] || [ -z "$ENABLE_TRACES_CHOICE" ]; then
+        ENABLE_TRACES=true
+        print_status "Will enable traces processing"
+    else
+        ENABLE_TRACES=false
+        print_status "Will disable traces processing"
+    fi
+
+    # Ensure at least one telemetry type is enabled
+    if [ "$ENABLE_LOGS" = false ] && [ "$ENABLE_METRICS" = false ] && [ "$ENABLE_TRACES" = false ]; then
+        print_warning "At least one telemetry type must be enabled. Enabling all three."
+        ENABLE_LOGS=true
+        ENABLE_METRICS=true
+        ENABLE_TRACES=true
+    fi
 
     echo
     echo "=== Cardinal Telemetry Collection ==="
@@ -485,6 +492,19 @@ ingestMetrics:
   autoscaling:
     enabled: false  # Disable autoscaling for local development
 
+ingestTraces:
+  enabled: $([ "$ENABLE_TRACES" = true ] && echo "true" || echo "false")
+  replicas: 1  # Reduce for local development
+  resources:
+    requests:
+      cpu: 500m
+      memory: 200Mi
+    limits:
+      cpu: 1000m
+      memory: 400Mi
+  autoscaling:
+    enabled: false  # Disable autoscaling for local development
+
 compactLogs:
   enabled: $([ "$ENABLE_LOGS" = true ] && echo "true" || echo "false")
   replicas: 1
@@ -500,6 +520,19 @@ compactLogs:
 
 compactMetrics:
   enabled: $([ "$ENABLE_METRICS" = true ] && echo "true" || echo "false")
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 200Mi
+    limits:
+      cpu: 1000m
+      memory: 400Mi
+  autoscaling:
+    enabled: false
+
+compactTraces:
+  enabled: $([ "$ENABLE_TRACES" = true ] && echo "true" || echo "false")
   replicas: 1
   resources:
     requests:
@@ -670,12 +703,20 @@ display_connection_info() {
     echo
     
     echo "Telemetry Configuration:"
-    if [ "$ENABLE_LOGS" = true ] && [ "$ENABLE_METRICS" = true ]; then
-        echo "  Enabled: Logs and Metrics"
-    elif [ "$ENABLE_LOGS" = true ]; then
-        echo "  Enabled: Logs only"
-    elif [ "$ENABLE_METRICS" = true ]; then
-        echo "  Enabled: Metrics only"
+    if [ "$ENABLE_LOGS" = true ]; then
+        echo "  Logs: Enabled"
+    else
+        echo "  Logs: Disabled"
+    fi
+    if [ "$ENABLE_METRICS" = true ]; then
+        echo "  Metrics: Enabled"
+    else
+        echo "  Metrics: Disabled"
+    fi
+    if [ "$ENABLE_TRACES" = true ]; then
+        echo "  Traces: Enabled"
+    else
+        echo "  Traces: Disabled"
     fi
     
     if [ "$ENABLE_CARDINAL_TELEMETRY" = true ]; then
@@ -841,12 +882,20 @@ display_configuration_summary() {
     echo
 
     echo "Telemetry Configuration:"
-    if [ "$ENABLE_LOGS" = true ] && [ "$ENABLE_METRICS" = true ]; then
-        echo "  Enabled: Logs and Metrics"
-    elif [ "$ENABLE_LOGS" = true ]; then
-        echo "  Enabled: Logs only"
-    elif [ "$ENABLE_METRICS" = true ]; then
-        echo "  Enabled: Metrics only"
+    if [ "$ENABLE_LOGS" = true ]; then
+        echo "  Logs: Enabled"
+    else
+        echo "  Logs: Disabled"
+    fi
+    if [ "$ENABLE_METRICS" = true ]; then
+        echo "  Metrics: Enabled"
+    else
+        echo "  Metrics: Disabled"
+    fi
+    if [ "$ENABLE_TRACES" = true ]; then
+        echo "  Traces: Enabled"
+    else
+        echo "  Traces: Disabled"
     fi
 
     if [ "$ENABLE_CARDINAL_TELEMETRY" = true ]; then
