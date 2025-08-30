@@ -339,6 +339,7 @@ install_postgresql() {
             --set auth.username=lakerunner \
             --set auth.password=lakerunnerpass \
             --set auth.database=lakerunner \
+            --set-string primary.initdb.scripts.create-config-db\\.sql="CREATE DATABASE configdb;" \
             --set persistence.enabled=true \
             --set persistence.size=8Gi >/dev/null  2>&1
         
@@ -384,6 +385,16 @@ database:
     username: "$([ "$INSTALL_POSTGRES" = true ] && echo "lakerunner" || echo "$POSTGRES_USER")"
     password: "$([ "$INSTALL_POSTGRES" = true ] && echo "lakerunnerpass" || echo "$POSTGRES_PASSWORD")"
     sslMode: "$([ "$INSTALL_POSTGRES" = true ] && echo "disable" || echo "require")"  # Disable SSL for local development
+configdb:
+  create: true  # Create the secret with credentials
+  secretName: "lakerunner-configdb-credentials"
+  lrdb:
+    host: "$([ "$INSTALL_POSTGRES" = true ] && echo "postgres-postgresql.$NAMESPACE.svc.cluster.local" || echo "$POSTGRES_HOST")"
+    port: $([ "$INSTALL_POSTGRES" = true ] && echo "5432" || echo "$POSTGRES_PORT")
+    name: "$([ "$INSTALL_POSTGRES" = true ] && echo "configdb" || echo "$POSTGRES_DB")"
+    username: "$([ "$INSTALL_POSTGRES" = true ] && echo "lakerunner" || echo "$POSTGRES_USER")"
+    password: "$([ "$INSTALL_POSTGRES" = true ] && echo "lakerunnerpass" || echo "$POSTGRES_PASSWORD")"
+    sslMode: "$([ "$INSTALL_POSTGRES" = true ] && echo "disable" || echo "require")"  # Disable SSL for local development
 
 # Storage profiles
 storageProfiles:
@@ -392,12 +403,11 @@ storageProfiles:
   yaml:
     - organization_id: "$ORG_ID"
       instance_num: 1
-      collector_name: "chq-saas"
+      collector_name: "lakerunner"
       cloud_provider: "$([ "$INSTALL_MINIO" = true ] && echo "minio" || echo "aws")"
       region: "$([ "$INSTALL_MINIO" = true ] && echo "local" || echo "$S3_REGION")"
       bucket: "$([ "$INSTALL_MINIO" = true ] && echo "lakerunner" || echo "$S3_BUCKET")"
       use_path_style: true
-      use_ssl: $([ "$INSTALL_MINIO" = true ] && echo false || echo true)
       $([ "$INSTALL_MINIO" = true ] && echo "endpoint: \"http://minio.$NAMESPACE.svc.cluster.local:9000\"" || echo "# endpoint: \"\"")
 
 # API keys for local development
@@ -616,10 +626,9 @@ grafana:
     datasources.yaml:
       apiVersion: 1
       datasources:
-        - name: Cardinal
+        - name: Cardinal Lakerunner
           type: cardinalhq-lakerunner-datasource
           access: proxy
-          isDefault: true
           editable: true
           jsonData:
             customPath: "http://lakerunner-query-api.$NAMESPACE.svc.cluster.local:7101"
@@ -635,7 +644,7 @@ install_lakerunner() {
     print_status "Installing LakeRunner in namespace: $NAMESPACE"
     
     helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
-        --version 0.2.28 \
+        --version 0.7.9 \
         --values generated/values-local.yaml \
         --namespace $NAMESPACE
     print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
@@ -993,7 +1002,7 @@ opentelemetry-collector:
         marshaler: otlp_proto
         s3uploader:
           s3_bucket: "lakerunner"
-          s3_prefix: "metrics-raw"
+          s3_prefix: "otel-raw/$ORG_ID/lakerunner"
           endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
           s3_force_path_style: true
           disable_ssl: true
@@ -1001,7 +1010,7 @@ opentelemetry-collector:
         marshaler: otlp_proto
         s3uploader:
           s3_bucket: "lakerunner"
-          s3_prefix: "logs-raw"
+          s3_prefix: "otel-raw/$ORG_ID/lakerunner"
           endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
           s3_force_path_style: true
           disable_ssl: true
@@ -1009,7 +1018,7 @@ opentelemetry-collector:
         marshaler: otlp_proto
         s3uploader:
           s3_bucket: "lakerunner"
-          s3_prefix: "traces-raw"
+          s3_prefix: "otel-raw/$ORG_ID/lakerunner"
           endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
           s3_force_path_style: true
           disable_ssl: true
