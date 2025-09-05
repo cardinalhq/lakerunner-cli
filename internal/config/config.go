@@ -17,6 +17,8 @@ package config
 import (
 	"fmt"
 	"os"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -25,6 +27,9 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
+	// Try to load .env file, but don't fail if it doesn't exist
+	_ = godotenv.Load()
+
 	cfg := &Config{
 		LAKERUNNER_QUERY_URL: getEnv("LAKERUNNER_QUERY_URL", ""),
 		LAKERUNNER_API_KEY:   getEnv("LAKERUNNER_API_KEY", ""),
@@ -34,6 +39,9 @@ func Load() (*Config, error) {
 
 // LoadWithFlags loads configuration with optional flag overrides
 func LoadWithFlags(endpointFlag, apiKeyFlag string) (*Config, error) {
+	// Try to load .env file, but don't fail if it doesn't exist
+	_ = godotenv.Load()
+
 	cfg := &Config{
 		LAKERUNNER_QUERY_URL: getEnvOrFlag("LAKERUNNER_QUERY_URL", endpointFlag),
 		LAKERUNNER_API_KEY:   getEnvOrFlag("LAKERUNNER_API_KEY", apiKeyFlag),
