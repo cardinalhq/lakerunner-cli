@@ -578,11 +578,9 @@ sweeper:
       cpu: 100m
       memory: 100Mi
 
-queryApi:
+queryApiV2:
   enabled: true
   replicas: 1
-  minWorkers: 2 # Pin for local development
-  maxWorkers: 2 # Pin for local development
   resources:
     requests:
       cpu: 1000m
@@ -591,9 +589,9 @@ queryApi:
       cpu: 1000m
       memory: 1Gi
 
-queryWorker:
+queryWorkerV2:
   enabled: true
-  initialReplicas: 2 # Pin for local development
+  replicas: 2 # Pin for local development
   resources:
     requests:
       cpu: 500m
@@ -644,7 +642,7 @@ install_lakerunner() {
     print_status "Installing LakeRunner in namespace: $NAMESPACE"
     
     helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
-        --version 0.7.9 \
+        --version 0.8.0-rc3 \
         --values generated/values-local.yaml \
         --namespace $NAMESPACE
     print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
