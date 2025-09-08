@@ -556,6 +556,11 @@ cloudProvider:
     inject: true
     accessKeyId: "$MINIO_ACCESS_KEY"
     secretAccessKey: "$MINIO_SECRET_KEY"
+  duckdb:
+    create: true
+    secretName: "duckdb-credentials"
+    accessKeyId: "$MINIO_ACCESS_KEY"
+    secretAccessKey: "$MINIO_SECRET_KEY"
 
 # Kafka configuration
 $([ "$INSTALL_KAFKA" = true ] && echo "kafka:" || echo "# kafka:")
@@ -771,7 +776,7 @@ install_lakerunner() {
     print_status "Installing LakeRunner in namespace: $NAMESPACE"
     
     helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
-        --version 0.8.0-rc6 \
+        --version 0.8.0-rc7 \
         --values generated/values-local.yaml \
         --namespace $NAMESPACE
     print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
