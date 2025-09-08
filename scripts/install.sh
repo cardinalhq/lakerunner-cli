@@ -688,7 +688,7 @@ grafana:
           access: proxy
           editable: true
           jsonData:
-            customPath: "http://lakerunner-query-api.$NAMESPACE.svc.cluster.local:7101"
+            customPath: "http://lakerunner-query-api-v2.$NAMESPACE.svc.cluster.local:8080"
           secureJsonData:
             apiKey: "$API_KEY"
 EOF
@@ -718,7 +718,7 @@ wait_for_services() {
         print_status "Setup job not found (may have already completed or not needed for upgrade)"
     fi
     print_status "Waiting for query-api service..."
-    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=query-api -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1 || true
+    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=query-api-v2 -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1 || true
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=grafana -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1 || true
     print_success "All services are ready in namespace: $NAMESPACE"
 }
@@ -729,12 +729,12 @@ setup_port_forwarding() {
     # Kill any existing port forwarding processes
     if command -v pkill >/dev/null 2>&1; then
         pkill -f "kubectl port-forward.*minio.*9001" 2>/dev/null || true
-        pkill -f "kubectl port-forward.*lakerunner-query-api.*7101" 2>/dev/null || true
+        pkill -f "kubectl port-forward.*lakerunner-query-api-v2.*8080" 2>/dev/null || true
         pkill -f "kubectl port-forward.*lakerunner-grafana.*3000" 2>/dev/null || true
     else
         # Fallback for systems without pkill (like macOS)
         ps aux | grep "kubectl port-forward.*minio.*9001" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
-        ps aux | grep "kubectl port-forward.*lakerunner-query-api.*7101" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
+        ps aux | grep "kubectl port-forward.*lakerunner-query-api-v2.*8080" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
         ps aux | grep "kubectl port-forward.*lakerunner-grafana.*3000" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
     fi
     sleep 1
@@ -754,7 +754,7 @@ setup_port_forwarding() {
     fi
 
     print_status "Starting LakeRunner Query API port forwarding..."
-    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-query-api 7101:7101 > /dev/null 2>&1 &
+    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-query-api-v2 8080:8080 > /dev/null 2>&1 &
     sleep 2
 
     # Start Grafana port forwarding
