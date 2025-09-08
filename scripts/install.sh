@@ -1156,6 +1156,7 @@ opentelemetry-collector:
           s3_bucket: "lakerunner"
           s3_prefix: "otel-raw/$ORG_ID/lakerunner"
           endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
+          compression: "gzip"
           s3_force_path_style: true
           disable_ssl: true
       awss3/logs:
@@ -1164,6 +1165,7 @@ opentelemetry-collector:
           s3_bucket: "lakerunner"
           s3_prefix: "otel-raw/$ORG_ID/lakerunner"
           endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
+          compression: "gzip"
           s3_force_path_style: true
           disable_ssl: true
       awss3/traces:
@@ -1172,6 +1174,7 @@ opentelemetry-collector:
           s3_bucket: "lakerunner"
           s3_prefix: "otel-raw/$ORG_ID/lakerunner"
           endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
+          compression: "gzip"
           s3_force_path_style: true
           disable_ssl: true
     service:
