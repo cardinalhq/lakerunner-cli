@@ -348,14 +348,21 @@ install_postgresql() {
         helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
         helm repo update >/dev/null  2>&1
         
-        helm install postgres bitnami/postgresql \
+        # Use KRaft mode (no Zookeeper) with proper configuration
+        helm install kafka bitnami/kafka \
             --namespace "$NAMESPACE" \
-            --set auth.username=lakerunner \
-            --set auth.password=lakerunnerpass \
-            --set auth.database=lakerunner \
-            --set-string primary.initdb.scripts.create-config-db\\.sql="CREATE DATABASE configdb;" \
-            --set persistence.enabled=true \
-            --set persistence.size=8Gi >/dev/null  2>&1
+            --set kraft.enabled=true \
+            --set controller.replicaCount=1 \
+            --set broker.replicaCount=1 \
+            --set controller.persistence.enabled=true \
+            --set controller.persistence.size=8Gi \
+            --set broker.persistence.enabled=true \
+            --set broker.persistence.size=8Gi \
+            --set listeners.client.protocol=PLAINTEXT \
+            --set listeners.controller.protocol=PLAINTEXT \
+            --set listeners.interbroker.protocol=PLAINTEXT \
+            --set listeners.external.protocol=PLAINTEXT \
+            --set service.ports.client=9092 >/dev/null  2>&1
         
         print_status "Waiting for PostgreSQL to be ready..."
         kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=postgresql -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
