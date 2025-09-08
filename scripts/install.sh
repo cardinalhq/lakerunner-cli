@@ -753,7 +753,7 @@ grafana:
     type: ClusterIP
     port: 3000
   plugins:
-    - "https://github.com/cardinalhq/cardinalhq-lakerunner-datasource/releases/latest/download/cardinalhq-lakerunner-datasource.zip;cardinalhq-lakerunner-datasource"
+    - "https://github.com/cardinalhq/cardinalhq-lakerunner-datasource/releases/download/v1.2.0-rc.3/cardinalhq-lakerunner-datasource.zip;cardinalhq-lakerunner-datasource"
   datasources:
     datasources.yaml:
       apiVersion: 1
