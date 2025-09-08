@@ -401,6 +401,76 @@ install_kafka() {
     fi
 }
 
+setup_kafka_topics() {
+    if [ "$INSTALL_KAFKA" = true ]; then
+        print_status "Setting up Kafka topics for LakeRunner..."
+        
+        # Wait for Kafka to be fully ready
+        print_status "Waiting for Kafka to be fully operational..."
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kafka -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
+        sleep 10  # Additional time for Kafka to fully initialize
+        
+        # Create required topics
+        print_status "Creating LakeRunner Kafka topics..."
+        
+        # List of topics required by LakeRunner
+        topics=(
+            "lakerunner.objstore.ingest.logs"
+            "lakerunner.objstore.ingest.metrics"
+            "lakerunner.objstore.ingest.traces"
+            "lakerunner.segments.logs.compact"
+            "lakerunner.segments.metrics.compact"
+            "lakerunner.segments.metrics.rollup"
+            "lakerunner.segments.traces.compact"
+        )
+        
+        # Find the first available Kafka pod dynamically
+        KAFKA_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=kafka -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        
+        if [ -z "$KAFKA_POD" ]; then
+            print_error "Could not find Kafka pod in namespace $NAMESPACE"
+            print_warning "Kafka topics will need to be created manually"
+            return 1
+        fi
+        
+        print_status "Using Kafka pod: $KAFKA_POD"
+        
+        # Test Kafka connectivity first
+        print_status "Testing Kafka connectivity..."
+        if ! kubectl exec -n "$NAMESPACE" "$KAFKA_POD" -- kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1; then
+            print_error "Cannot connect to Kafka broker"
+            print_warning "Kafka topics will need to be created manually"
+            return 1
+        fi
+        
+        for topic in "${topics[@]}"; do
+            if kubectl exec -n "$NAMESPACE" "$KAFKA_POD" -- kafka-topics.sh \
+                --bootstrap-server localhost:9092 \
+                --create \
+                --topic "$topic" \
+                --partitions 3 \
+                --replication-factor 1 \
+                --if-not-exists >/dev/null 2>&1; then
+                print_success "Topic $topic ready"
+            else
+                print_warning "Failed to create topic $topic"
+            fi
+        done
+        
+        print_success "Kafka topics setup completed"
+    else
+        print_status "Skipping Kafka topics setup (using existing Kafka)"
+        print_warning "Please ensure the following topics exist in your external Kafka:"
+        echo "  - lakerunner.objstore.ingest.logs"
+        echo "  - lakerunner.objstore.ingest.metrics" 
+        echo "  - lakerunner.objstore.ingest.traces"
+        echo "  - lakerunner.segments.logs.compact"
+        echo "  - lakerunner.segments.metrics.compact"
+        echo "  - lakerunner.segments.metrics.rollup"
+        echo "  - lakerunner.segments.traces.compact"
+    fi
+}
+
 generate_values_file() {
     print_status "Generating values-local.yaml..."
 
@@ -701,7 +771,7 @@ install_lakerunner() {
     print_status "Installing LakeRunner in namespace: $NAMESPACE"
     
     helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
-        --version 0.8.0-rc5 \
+        --version 0.8.0-rc6 \
         --values generated/values-local.yaml \
         --namespace $NAMESPACE
     print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
@@ -1271,6 +1341,7 @@ main() {
     install_minio
     install_postgresql
     install_kafka
+    setup_kafka_topics
     
     generate_values_file
     
