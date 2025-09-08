@@ -135,6 +135,20 @@ get_infrastructure_preferences() {
 
     fi
 
+    get_input "Do you want to install Kafka locally? (Y/n)" "Y" "INSTALL_KAFKA"
+    if [[ "$INSTALL_KAFKA" =~ ^[Yy]$ ]] || [ -z "$INSTALL_KAFKA" ]; then
+        INSTALL_KAFKA=true
+        print_status "Will install Kafka locally"
+    else
+        INSTALL_KAFKA=false
+        print_status "Will use existing Kafka"
+        get_input "Enter Kafka bootstrap servers" "localhost:9092" "KAFKA_BOOTSTRAP_SERVERS"
+        get_input "Enter Kafka username (leave empty if no auth)" "" "KAFKA_USERNAME"
+        if [ -n "$KAFKA_USERNAME" ]; then
+            get_input "Enter Kafka password" "" "KAFKA_PASSWORD"
+        fi
+    fi
+
     echo
     echo "=== SQS Configuration (Optional) ==="
     if [ "$INSTALL_MINIO" = true ]; then
@@ -352,6 +366,111 @@ install_postgresql() {
     fi
 }
 
+install_kafka() {
+    if [ "$INSTALL_KAFKA" = true ]; then
+        print_status "Installing Kafka..."
+        
+        if helm list | grep -q "kafka"; then
+            print_warning "Kafka is already installed. Skipping..."
+            return
+        fi
+        
+        helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
+        helm repo update >/dev/null  2>&1
+        
+        helm install kafka bitnami/kafka \
+            --namespace "$NAMESPACE" \
+            --set persistence.enabled=true \
+            --set persistence.size=8Gi \
+            --set zookeeper.persistence.enabled=true \
+            --set zookeeper.persistence.size=2Gi \
+            --set auth.clientProtocol=plaintext \
+            --set auth.interBrokerProtocol=plaintext \
+            --set listeners.client.protocol=PLAINTEXT \
+            --set listeners.controller.protocol=PLAINTEXT \
+            --set listeners.interbroker.protocol=PLAINTEXT \
+            --set listeners.external.protocol=PLAINTEXT \
+            --set service.ports.client=9092 >/dev/null  2>&1
+        
+        print_status "Waiting for Kafka to be ready..."
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kafka -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
+        
+        print_success "Kafka installed successfully"
+    else
+        print_status "Skipping Kafka installation (using existing Kafka)"
+    fi
+}
+
+setup_kafka_topics() {
+    if [ "$INSTALL_KAFKA" = true ]; then
+        print_status "Setting up Kafka topics for LakeRunner..."
+        
+        # Wait for Kafka to be fully ready
+        print_status "Waiting for Kafka to be fully operational..."
+        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kafka -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
+        sleep 10  # Additional time for Kafka to fully initialize
+        
+        # Create required topics
+        print_status "Creating LakeRunner Kafka topics..."
+        
+        # List of topics required by LakeRunner
+        topics=(
+            "lakerunner.objstore.ingest.logs"
+            "lakerunner.objstore.ingest.metrics"
+            "lakerunner.objstore.ingest.traces"
+            "lakerunner.segments.logs.compact"
+            "lakerunner.segments.metrics.compact"
+            "lakerunner.segments.metrics.rollup"
+            "lakerunner.segments.traces.compact"
+        )
+        
+        # Find the first available Kafka pod dynamically
+        KAFKA_POD=$(kubectl get pods -n "$NAMESPACE" -l app.kubernetes.io/name=kafka -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+        
+        if [ -z "$KAFKA_POD" ]; then
+            print_error "Could not find Kafka pod in namespace $NAMESPACE"
+            print_warning "Kafka topics will need to be created manually"
+            return 1
+        fi
+        
+        print_status "Using Kafka pod: $KAFKA_POD"
+        
+        # Test Kafka connectivity first
+        print_status "Testing Kafka connectivity..."
+        if ! kubectl exec -n "$NAMESPACE" "$KAFKA_POD" -- kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1; then
+            print_error "Cannot connect to Kafka broker"
+            print_warning "Kafka topics will need to be created manually"
+            return 1
+        fi
+        
+        for topic in "${topics[@]}"; do
+            if kubectl exec -n "$NAMESPACE" "$KAFKA_POD" -- kafka-topics.sh \
+                --bootstrap-server localhost:9092 \
+                --create \
+                --topic "$topic" \
+                --partitions 3 \
+                --replication-factor 1 \
+                --if-not-exists >/dev/null 2>&1; then
+                print_success "Topic $topic ready"
+            else
+                print_warning "Failed to create topic $topic"
+            fi
+        done
+        
+        print_success "Kafka topics setup completed"
+    else
+        print_status "Skipping Kafka topics setup (using existing Kafka)"
+        print_warning "Please ensure the following topics exist in your external Kafka:"
+        echo "  - lakerunner.objstore.ingest.logs"
+        echo "  - lakerunner.objstore.ingest.metrics" 
+        echo "  - lakerunner.objstore.ingest.traces"
+        echo "  - lakerunner.segments.logs.compact"
+        echo "  - lakerunner.segments.metrics.compact"
+        echo "  - lakerunner.segments.metrics.rollup"
+        echo "  - lakerunner.segments.traces.compact"
+    fi
+}
+
 generate_values_file() {
     print_status "Generating values-local.yaml..."
 
@@ -404,7 +523,7 @@ storageProfiles:
     - organization_id: "$ORG_ID"
       instance_num: 1
       collector_name: "lakerunner"
-      cloud_provider: "$([ "$INSTALL_MINIO" = true ] && echo "minio" || echo "aws")"
+      cloud_provider: "aws"  # Always use "aws" for S3-compatible storage (including MinIO)
       region: "$([ "$INSTALL_MINIO" = true ] && echo "local" || echo "$S3_REGION")"
       bucket: "$([ "$INSTALL_MINIO" = true ] && echo "lakerunner" || echo "$S3_BUCKET")"
       use_path_style: true
@@ -427,32 +546,45 @@ auth:
     secretName: "query-token"
     secretValue: "$AUTH_TOKEN"
 
-# AWS/S3 credentials configuration
-aws:
-  region: "$([ "$INSTALL_MINIO" = true ] && echo "us-east-1" || echo "$S3_REGION")"  # This doesn't matter for MinIO but is required
-  create: true  # Create the secret with credentials
-  secretName: "aws-credentials"
-  inject: true
-  accessKeyId: "$MINIO_ACCESS_KEY"
-  secretAccessKey: "$MINIO_SECRET_KEY"
+# Cloud provider configuration
+cloudProvider:
+  provider: "aws"  # Using AWS provider for S3-compatible storage (including MinIO)
+  aws:
+    region: "$([ "$INSTALL_MINIO" = true ] && echo "us-east-1" || echo "$S3_REGION")"  # This doesn't matter for MinIO but is required
+    create: true  # Create the secret with credentials
+    secretName: "aws-credentials"
+    inject: true
+    accessKeyId: "$MINIO_ACCESS_KEY"
+    secretAccessKey: "$MINIO_SECRET_KEY"
+  duckdb:
+    create: true
+    secretName: "duckdb-credentials"
+    accessKeyId: "$MINIO_ACCESS_KEY"
+    secretAccessKey: "$MINIO_SECRET_KEY"
 
-# Global OpenTelemetry configuration for Cardinal
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "global:" || echo "# global:")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "  env:" || echo "  # env:")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    # Enable OpenTelemetry logs, metrics, and traces for all components" || echo "    # Enable OpenTelemetry logs, metrics, and traces for all components")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: ENABLE_OTLP_TELEMETRY" || echo "    # - name: ENABLE_OTLP_TELEMETRY")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"true\"" || echo "      #   value: \"true\"")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    # OpenTelemetry configuration for Cardinal" || echo "    # OpenTelemetry configuration for Cardinal")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_TRACES_EXPORTER" || echo "    # - name: OTEL_TRACES_EXPORTER")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"otlp\"" || echo "      #   value: \"otlp\"")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_METRICS_EXPORTER" || echo "    # - name: OTEL_METRICS_EXPORTER")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"otlp\"" || echo "      #   value: \"otlp\"")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_LOGS_EXPORTER" || echo "    # - name: OTEL_LOGS_EXPORTER")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"otlp\"" || echo "      #   value: \"otlp\"")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_EXPORTER_OTLP_ENDPOINT" || echo "    # - name: OTEL_EXPORTER_OTLP_ENDPOINT")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"https://otelhttp.intake.us-east-2.aws.cardinalhq.io\"" || echo "      #   value: \"https://otelhttp.intake.us-east-2.aws.cardinalhq.io\"")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    - name: OTEL_EXPORTER_OTLP_HEADERS" || echo "    # - name: OTEL_EXPORTER_OTLP_HEADERS")
-$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "      value: \"x-cardinalhq-api-key=$CARDINAL_API_KEY\"" || echo "      #   value: \"x-cardinalhq-api-key=\"")
+# Kafka configuration
+$([ "$INSTALL_KAFKA" = true ] && echo "kafka:" || echo "# kafka:")
+$([ "$INSTALL_KAFKA" = true ] && echo "  enabled: true" || echo "# enabled: false")
+$([ "$INSTALL_KAFKA" = true ] && echo "  bootstrapServers: \"kafka.$NAMESPACE.svc.cluster.local:9092\"" || echo "# bootstrapServers: \"$KAFKA_BOOTSTRAP_SERVERS\"")
+$([ "$INSTALL_KAFKA" = false ] && [ -n "$KAFKA_USERNAME" ] && echo "# auth:" || echo "# # auth:")
+$([ "$INSTALL_KAFKA" = false ] && [ -n "$KAFKA_USERNAME" ] && echo "#   username: \"$KAFKA_USERNAME\"" || echo "# #   username: \"\"")
+$([ "$INSTALL_KAFKA" = false ] && [ -n "$KAFKA_PASSWORD" ] && echo "#   password: \"$KAFKA_PASSWORD\"" || echo "# #   password: \"\"")
+
+# Global configuration
+global:
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "  # Cardinal telemetry configuration" || echo "  # Cardinal telemetry configuration (disabled)")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "  cardinal:" || echo "  # cardinal:")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    apiKey: \"$CARDINAL_API_KEY\"" || echo "  #   apiKey: \"\"")
+  # Required empty objects to prevent nil pointer errors
+  labels: {}
+  annotations: {}
+  # Global environment variables for all LakeRunner components
+  env:
+$([ "$INSTALL_KAFKA" = true ] && echo "    # Kafka configuration for LakeRunner" || echo "    # Kafka configuration (disabled)")
+$([ "$INSTALL_KAFKA" = true ] && echo "    - name: LAKERUNNER_FLY_ENABLED" || echo "    # - name: LAKERUNNER_FLY_ENABLED")
+$([ "$INSTALL_KAFKA" = true ] && echo "      value: \"true\"" || echo "    #   value: \"false\"")
+$([ "$INSTALL_KAFKA" = true ] && echo "    - name: LAKERUNNER_FLY_BROKERS" || echo "    # - name: LAKERUNNER_FLY_BROKERS")
+$([ "$INSTALL_KAFKA" = true ] && echo "      value: \"kafka.$NAMESPACE.svc.cluster.local:9092\"" || echo "    #   value: \"$KAFKA_BOOTSTRAP_SERVERS\"")
 
 # PubSub configuration
 pubsub:
@@ -578,11 +710,9 @@ sweeper:
       cpu: 100m
       memory: 100Mi
 
-queryApi:
+queryApiV2:
   enabled: true
   replicas: 1
-  minWorkers: 2 # Pin for local development
-  maxWorkers: 2 # Pin for local development
   resources:
     requests:
       cpu: 1000m
@@ -590,10 +720,12 @@ queryApi:
     limits:
       cpu: 1000m
       memory: 1Gi
+  temporaryStorage:
+    size: "8Gi"  # Reduce for local development
 
-queryWorker:
+queryWorkerV2:
   enabled: true
-  initialReplicas: 2 # Pin for local development
+  replicas: 2 # Pin for local development
   resources:
     requests:
       cpu: 500m
@@ -621,7 +753,7 @@ grafana:
     type: ClusterIP
     port: 3000
   plugins:
-    - "https://github.com/cardinalhq/cardinalhq-lakerunner-datasource/releases/latest/download/cardinalhq-lakerunner-datasource.zip;cardinalhq-lakerunner-datasource"
+    - "https://github.com/cardinalhq/cardinalhq-lakerunner-datasource/releases/download/v1.2.0-rc.3/cardinalhq-lakerunner-datasource.zip;cardinalhq-lakerunner-datasource"
   datasources:
     datasources.yaml:
       apiVersion: 1
@@ -631,7 +763,7 @@ grafana:
           access: proxy
           editable: true
           jsonData:
-            customPath: "http://lakerunner-query-api.$NAMESPACE.svc.cluster.local:7101"
+            customPath: "http://lakerunner-query-api-v2.$NAMESPACE.svc.cluster.local:8080"
           secureJsonData:
             apiKey: "$API_KEY"
 EOF
@@ -644,7 +776,7 @@ install_lakerunner() {
     print_status "Installing LakeRunner in namespace: $NAMESPACE"
     
     helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
-        --version 0.7.9 \
+        --version 0.8.0 \
         --values generated/values-local.yaml \
         --namespace $NAMESPACE
     print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
@@ -661,7 +793,7 @@ wait_for_services() {
         print_status "Setup job not found (may have already completed or not needed for upgrade)"
     fi
     print_status "Waiting for query-api service..."
-    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=query-api -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1 || true
+    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=query-api-v2 -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1 || true
     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=grafana -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1 || true
     print_success "All services are ready in namespace: $NAMESPACE"
 }
@@ -672,12 +804,12 @@ setup_port_forwarding() {
     # Kill any existing port forwarding processes
     if command -v pkill >/dev/null 2>&1; then
         pkill -f "kubectl port-forward.*minio.*9001" 2>/dev/null || true
-        pkill -f "kubectl port-forward.*lakerunner-query-api.*7101" 2>/dev/null || true
+        pkill -f "kubectl port-forward.*lakerunner-query-api-v2.*8080" 2>/dev/null || true
         pkill -f "kubectl port-forward.*lakerunner-grafana.*3000" 2>/dev/null || true
     else
         # Fallback for systems without pkill (like macOS)
         ps aux | grep "kubectl port-forward.*minio.*9001" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
-        ps aux | grep "kubectl port-forward.*lakerunner-query-api.*7101" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
+        ps aux | grep "kubectl port-forward.*lakerunner-query-api-v2.*8080" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
         ps aux | grep "kubectl port-forward.*lakerunner-grafana.*3000" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
     fi
     sleep 1
@@ -697,7 +829,7 @@ setup_port_forwarding() {
     fi
 
     print_status "Starting LakeRunner Query API port forwarding..."
-    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-query-api 7101:7101 > /dev/null 2>&1 &
+    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-query-api-v2 8080:8080 > /dev/null 2>&1 &
     sleep 2
 
     # Start Grafana port forwarding
@@ -767,6 +899,20 @@ display_connection_info() {
         echo "  Port: $POSTGRES_PORT"
         echo "  Database: $POSTGRES_DB"
         echo "  Username: $POSTGRES_USER"
+        echo
+    fi
+    
+    if [ "$INSTALL_KAFKA" = true ]; then
+        echo "Kafka:"
+        echo "  Bootstrap Servers: kafka.$NAMESPACE.svc.cluster.local:9092"
+        echo "  Protocol: PLAINTEXT (no authentication)"
+        echo
+    else
+        echo "Kafka:"
+        echo "  Bootstrap Servers: $KAFKA_BOOTSTRAP_SERVERS"
+        if [ -n "$KAFKA_USERNAME" ]; then
+            echo "  Username: $KAFKA_USERNAME"
+        fi
         echo
     fi
     
@@ -881,6 +1027,12 @@ display_configuration_summary() {
         echo "  Storage: Local MinIO"
     else
         echo "  Storage: External S3 ($S3_BUCKET)"
+    fi
+
+    if [ "$INSTALL_KAFKA" = true ]; then
+        echo "  Kafka: Local installation"
+    else
+        echo "  Kafka: External ($KAFKA_BOOTSTRAP_SERVERS)"
     fi
 
     if [ "$USE_SQS" = true ]; then
@@ -1078,20 +1230,33 @@ setup_minio_webhooks() {
         fi
         
         # Configure webhook notifications
-        kubectl exec -n "$NAMESPACE" deployment/minio -- mc admin config set minio notify_webhook:create_object endpoint="http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/" >/dev/null 2>&1
-        print_success "Created webhook to pubsub, restarting minio pod to apply configuration"
+        print_status "Configuring MinIO webhook notifications..."
+        if kubectl exec -n "$NAMESPACE" deployment/minio -- mc admin config set minio notify_webhook:create_object endpoint="http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/" 2>/dev/null; then
+            print_success "Webhook configuration set successfully"
+        else
+            print_warning "Failed to set webhook configuration, continuing..."
+        fi
+        
+        print_status "Restarting MinIO to apply configuration..."
         kubectl rollout restart deployment/minio -n "$NAMESPACE" >/dev/null 2>&1
-        sleep 10
-        print_success "restarted minio with configured webhooks"
+        
+        print_status "Waiting for MinIO to restart..."
+        kubectl rollout status deployment/minio -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
+        
+        # Wait a bit more for MinIO to be fully ready
+        sleep 5
+        print_success "MinIO restarted successfully"
         
         # Re-setup mc alias after pod restart
+        print_status "Re-establishing MinIO connection..."
         kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
         
         # Add event notifications for different telemetry types
-        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "logs-raw" >/dev/null 2>&1
-        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "metrics-raw" >/dev/null 2>&1
-        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "traces-raw" >/dev/null 2>&1
-        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "otel-raw" >/dev/null 2>&1
+        print_status "Setting up event notifications..."
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "logs-raw" 2>/dev/null || print_warning "Failed to add logs-raw event notification"
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "metrics-raw" 2>/dev/null || print_warning "Failed to add metrics-raw event notification"
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "traces-raw" 2>/dev/null || print_warning "Failed to add traces-raw event notification"
+        kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "otel-raw" 2>/dev/null || print_warning "Failed to add otel-raw event notification"
         
         print_success "MinIO webhooks configured successfully for LakeRunner event notifications"
     else
@@ -1180,6 +1345,8 @@ main() {
     
     install_minio
     install_postgresql
+    install_kafka
+    setup_kafka_topics
     
     generate_values_file
     
