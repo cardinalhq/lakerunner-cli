@@ -71,7 +71,15 @@ func (c *Client) setCommonHeaders(req *http.Request) {
 }
 
 // QueryLogs makes a request to logs query and returns a channel of responses
-func (c *Client) QueryLogs(ctx context.Context, q string, s string, e string, limit int, reverse bool) (<-chan LogsResponse, error) {
+func (c *Client) QueryLogs(
+	ctx context.Context,
+	q string,
+	s string,
+	e string,
+	limit int,
+	reverse bool,
+	fields []string,
+) (<-chan LogsResponse, error) {
 	url := c.baseURL + "/api/v1/logs/query"
 
 	body := map[string]interface{}{
@@ -81,6 +89,11 @@ func (c *Client) QueryLogs(ctx context.Context, q string, s string, e string, li
 		"limit":   limit,
 		"reverse": reverse,
 	}
+
+	if len(fields) > 0 {
+		body["fields"] = fields
+	}
+
 	jsonData, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -198,6 +211,7 @@ func (c *Client) streamResponses(ctx context.Context, httpReq *http.Request) (<-
 				if line == "" {
 					continue
 				}
+
 				if strings.HasPrefix(line, "data: ") {
 					data := strings.TrimPrefix(line, "data: ")
 					if data == `{"type":"done"}` {

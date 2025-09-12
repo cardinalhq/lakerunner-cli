@@ -116,6 +116,18 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		}
 	}
 
+	var fields []string
+	if len(selectedColumns) > 0 {
+		for _, col := range selectedColumns {
+			switch strings.ToLower(col) {
+			case "timestamp", "ts", "level", "message", "service", "svc", "pod":
+				// skip display-only
+			default:
+				fields = append(fields, col)
+			}
+		}
+	}
+
 	endpoint, _ := cmdObj.Flags().GetString("endpoint")
 	apiKey, _ := cmdObj.Flags().GetString("api-key")
 	cfg, err := config.LoadWithFlags(endpoint, apiKey)
@@ -171,7 +183,7 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	responseChan, err := client.QueryLogs(ctx, q, startTimeStr, endTimeStr, limit, true)
+	responseChan, err := client.QueryLogs(ctx, q, startTimeStr, endTimeStr, limit, true, fields)
 	if err != nil {
 		return fmt.Errorf("failed to query logs: %w", err)
 	}
@@ -183,6 +195,9 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		fmt.Printf("Limit: %d results\n", limit)
 		if len(selectedColumns) > 0 {
 			fmt.Printf("Columns: %v\n", selectedColumns)
+		}
+		if len(fields) > 0 {
+			fmt.Printf("Fields (API): %v\n", fields)
 		}
 		fmt.Println("---")
 	}
@@ -224,28 +239,20 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		}
 
 		logMessage := ""
-		if tags, ok := message["tags"].(map[string]interface{}); ok {
+		serviceName := ""
+		levelVal := ""
+		podName := ""
+		tags, _ := message["tags"].(map[string]interface{})
+		if tags != nil {
 			if msg, ok := tags["_cardinalhq.message"].(string); ok {
 				logMessage = msg
 			}
-		}
-
-		serviceName := ""
-		if tags, ok := message["tags"].(map[string]interface{}); ok {
 			if service, ok := tags["resource.service.name"].(string); ok {
 				serviceName = service
 			}
-		}
-
-		levelVal := ""
-		if tags, ok := message["tags"].(map[string]interface{}); ok {
 			if level, ok := tags["_cardinalhq.level"].(string); ok {
 				levelVal = level
 			}
-		}
-
-		podName := ""
-		if tags, ok := message["tags"].(map[string]interface{}); ok {
 			if pod, ok := tags["resource.k8s.pod.name"].(string); ok {
 				podName = pod
 			}
@@ -283,10 +290,15 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 						val = fmt.Sprintf("%s%s%s", colorPurple, podName, colorReset)
 					}
 				default:
-					if tags, ok := message["tags"].(map[string]interface{}); ok {
+					if tags != nil {
+						// try dotted, normalized, and prefixed keys
 						if v, ok := tags[col]; ok {
 							val = fmt.Sprintf("%v", v)
+						} else if v, ok := tags[normalizeTag(col)]; ok {
+							val = fmt.Sprintf("%v", v)
 						} else if v, ok := tags["_cardinalhq."+col]; ok {
+							val = fmt.Sprintf("%v", v)
+						} else if v, ok := tags["_cardinalhq."+normalizeTag(col)]; ok {
 							val = fmt.Sprintf("%v", v)
 						} else {
 							val = "<undefined>"
@@ -310,6 +322,7 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		}
 
 		if responseCount >= limit {
+			cancel()
 			break
 		}
 	}
