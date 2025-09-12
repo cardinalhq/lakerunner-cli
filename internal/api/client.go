@@ -35,76 +35,12 @@ type Client struct {
 	client  *http.Client
 }
 
-// GraphRequest represents a request to the graph endpoint
-type GraphRequest struct {
-	BaseExpressions map[string]Expression `json:"baseExpressions"`
-}
-
-// Expression represents an expression in a graph request
-type Expression struct {
-	Dataset       string                 `json:"dataset"`
-	Limit         int                    `json:"limit"`
-	Order         string                 `json:"order"`
-	ReturnResults bool                   `json:"returnResults"`
-	Filter        *Filter                `json:"filter,omitempty"`
-	Chart         map[string]interface{} `json:"chart,omitempty"`
-}
-
-// Filter represents a filter for log queries
-type Filter struct {
-	K         string   `json:"k,omitempty"`
-	V         []string `json:"v,omitempty"`
-	Op        string   `json:"op,omitempty"`
-	DataType  string   `json:"dataType,omitempty"`
-	Extracted bool     `json:"extracted,omitempty"`
-	Computed  bool     `json:"computed,omitempty"`
-	// For nested filters - use map for dynamic keys
-	Filters map[string]*Filter `json:"-"`
-	// MarshalJSON will handle the dynamic filter keys
-}
-
-// MarshalJSON implements custom JSON marshaling for Filter
-func (f *Filter) MarshalJSON() ([]byte, error) {
-	// Create a map to hold all fields
-	result := make(map[string]interface{})
-
-	// Add the base fields
-	if f.K != "" {
-		result["k"] = f.K
-	}
-	if len(f.V) > 0 {
-		result["v"] = f.V
-	}
-	if f.Op != "" {
-		result["op"] = f.Op
-	}
-	if f.DataType != "" {
-		result["dataType"] = f.DataType
-	}
-	if f.Extracted {
-		result["extracted"] = f.Extracted
-	}
-	if f.Computed {
-		result["computed"] = f.Computed
-	}
-
-	// Add dynamic filters
-	if f.Filters != nil {
-		for key, filter := range f.Filters {
-			result[key] = filter
-		}
-	}
-
-	return json.Marshal(result)
-}
-
-
-// QueryParams represents URL query parameters
-type QueryParams struct {
-	StartTime string `json:"s"`
-	EndTime   string `json:"e"`
-	TagName   string `json:"tagName,omitempty"`
-	DataType  string `json:"dataType,omitempty"`
+// LogsResponse represents a response from the logs endpoints
+type LogsResponse struct {
+	ID      string                 `json:"id"`
+	Type    string                 `json:"type"`
+	Message map[string]interface{} `json:"message"`
+	Data    map[string]interface{} `json:"data"`
 }
 
 // NewClient creates a new API client with proper configuration
@@ -113,64 +49,39 @@ func NewClient(cfg *config.Config) *Client {
 		baseURL: cfg.LAKERUNNER_QUERY_URL,
 		apiKey:  cfg.LAKERUNNER_API_KEY,
 		client: &http.Client{
-			Timeout: 60 * time.Second, // Increased timeout for streaming
+			Timeout: 60 * time.Second,
 			Transport: &http.Transport{
 				MaxIdleConns:       10,
-				IdleConnTimeout:    60 * time.Second, // Increased idle timeout
+				IdleConnTimeout:    60 * time.Second,
 				DisableCompression: false,
 			},
 		},
 	}
 }
 
-// buildURL constructs the URL with query parameters
-func (c *Client) buildURL(endpoint string, params QueryParams) string {
-	// Ensure baseURL doesn't end with slash and endpoint starts with slash
-	baseURL := strings.TrimSuffix(c.baseURL, "/")
-	if !strings.HasPrefix(endpoint, "/") {
-		endpoint = "/" + endpoint
-	}
-
-	url := baseURL + endpoint
-
-	var queryParts []string
-	if params.StartTime != "" {
-		queryParts = append(queryParts, fmt.Sprintf("s=%s", params.StartTime))
-	}
-	if params.EndTime != "" {
-		queryParts = append(queryParts, fmt.Sprintf("e=%s", params.EndTime))
-	}
-	if params.TagName != "" {
-		queryParts = append(queryParts, fmt.Sprintf("tagName=%s", params.TagName))
-	}
-	if params.DataType != "" {
-		queryParts = append(queryParts, fmt.Sprintf("dataType=%s", params.DataType))
-	}
-
-	if len(queryParts) > 0 {
-		url += "?" + strings.Join(queryParts, "&")
-	}
-
-	return url
-}
-
 // setCommonHeaders sets the common headers for all requests
 func (c *Client) setCommonHeaders(req *http.Request) {
 	req.Header.Set("Accept", "text/event-stream")
-	req.Header.Set("api-key", c.apiKey)
-	req.Header.Set("Content-Type", "text/plain;charset=UTF-8")
+	req.Header.Set("x-cardinalhq-api-key", c.apiKey)
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Connection", "keep-alive")
-	// Fix the Origin header to not have trailing slash
 	origin := strings.TrimSuffix(c.baseURL, "/")
 	req.Header.Set("Origin", origin)
 	req.Header.Set("User-Agent", "lakerunner-cli/1.0")
 }
 
-// QueryGraph makes a request to the graph endpoint and returns a channel of responses
-func (c *Client) QueryGraph(ctx context.Context, req *GraphRequest, params QueryParams) (<-chan LogsResponse, error) {
-	url := c.buildURL("/api/v1/graph", params)
+// QueryLogs makes a request to logs query and returns a channel of responses
+func (c *Client) QueryLogs(ctx context.Context, q string, s string, e string, limit int, reverse bool) (<-chan LogsResponse, error) {
+	url := c.baseURL + "/api/v1/logs/query"
 
-	jsonData, err := json.Marshal(req)
+	body := map[string]interface{}{
+		"q":       q,
+		"s":       s,
+		"e":       e,
+		"limit":   limit,
+		"reverse": reverse,
+	}
+	jsonData, err := json.Marshal(body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
@@ -179,9 +90,80 @@ func (c *Client) QueryGraph(ctx context.Context, req *GraphRequest, params Query
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-
 	c.setCommonHeaders(httpReq)
 
+	return c.streamResponses(ctx, httpReq)
+}
+
+// QueryLogTags makes a request to tags query and returns a json response
+func (c *Client) QueryLogTags(ctx context.Context, s string, e string) (<-chan LogsResponse, error) {
+	url := c.baseURL + "/api/v1/logs/tags"
+
+	body := map[string]interface{}{
+		"s": s,
+		"e": e,
+	}
+	jsonData, _ := json.Marshal(body)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.setCommonHeaders(httpReq)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to make request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+	var parsed struct {
+		Tags []string `json:"tags"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return nil, fmt.Errorf("failed to decode tags: %w", err)
+	}
+
+	responseChan := make(chan LogsResponse, 1)
+	go func() {
+		defer close(responseChan)
+		msg := map[string]interface{}{"tags": parsed.Tags}
+		responseChan <- LogsResponse{Type: "data", Message: msg}
+	}()
+	return responseChan, nil
+}
+
+// QueryLogTagValues makes a request to tag values query and returns a channel of responses
+func (c *Client) QueryLogTagValues(ctx context.Context, tagName, q, s, e string) (<-chan LogsResponse, error) {
+	url := fmt.Sprintf("%s/api/v1/logs/tagvalues?tagName=%s", c.baseURL, tagName)
+
+	body := map[string]interface{}{
+		"s": s,
+		"e": e,
+	}
+	if q != "" {
+		body["q"] = q
+	}
+
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	c.setCommonHeaders(httpReq)
+
+	return c.streamResponses(ctx, httpReq)
+}
+
+// SSE streaming logic
+func (c *Client) streamResponses(ctx context.Context, httpReq *http.Request) (<-chan LogsResponse, error) {
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
@@ -194,12 +176,11 @@ func (c *Client) QueryGraph(ctx context.Context, req *GraphRequest, params Query
 	}
 
 	responseChan := make(chan LogsResponse)
-
 	go func() {
 		defer func() { _ = resp.Body.Close() }()
 		defer close(responseChan)
 
-		reader := bufio.NewReaderSize(resp.Body, 4096) // Larger buffer for efficiency
+		reader := bufio.NewReaderSize(resp.Body, 4096)
 		for {
 			select {
 			case <-ctx.Done():
@@ -217,18 +198,15 @@ func (c *Client) QueryGraph(ctx context.Context, req *GraphRequest, params Query
 				if line == "" {
 					continue
 				}
-
 				if strings.HasPrefix(line, "data: ") {
 					data := strings.TrimPrefix(line, "data: ")
 					if data == `{"type":"done"}` {
 						return
 					}
-
 					var response LogsResponse
 					if err := json.Unmarshal([]byte(data), &response); err != nil {
 						continue
 					}
-
 					select {
 					case responseChan <- response:
 					case <-ctx.Done():
@@ -238,149 +216,5 @@ func (c *Client) QueryGraph(ctx context.Context, req *GraphRequest, params Query
 			}
 		}
 	}()
-
 	return responseChan, nil
-}
-
-// QueryTags makes a request to the tags endpoint and returns a channel of responses
-func (c *Client) QueryTags(ctx context.Context, req *Expression, params QueryParams) (<-chan LogsResponse, error) {
-	url := c.buildURL("/api/v1/tags/logs", params)
-
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	c.setCommonHeaders(httpReq)
-
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	responseChan := make(chan LogsResponse)
-
-	go func() {
-		defer func() { _ = resp.Body.Close() }()
-		defer close(responseChan)
-
-		reader := bufio.NewReaderSize(resp.Body, 4096) // Larger buffer for efficiency
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				line, err := reader.ReadString('\n')
-				if err != nil {
-					if err == io.EOF {
-						return
-					}
-					return
-				}
-
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
-				}
-
-				if strings.HasPrefix(line, "data: ") {
-					data := strings.TrimPrefix(line, "data: ")
-					if data == `{"type":"done"}` {
-						return
-					}
-
-					var response LogsResponse
-					if err := json.Unmarshal([]byte(data), &response); err != nil {
-						continue
-					}
-
-					select {
-					case responseChan <- response:
-					case <-ctx.Done():
-						return
-					}
-				}
-			}
-		}
-	}()
-
-	return responseChan, nil
-}
-
-// Helper functions for creating common request types
-
-// CreateGraphRequest creates a graph request with expressions
-func CreateGraphRequest(expressions map[string]Expression) *GraphRequest {
-	return &GraphRequest{
-		BaseExpressions: expressions,
-	}
-}
-
-// CreateExpression creates an expression for graph queries
-func CreateExpression(dataset string, limit int, filter *Filter, chart map[string]interface{}) Expression {
-	return Expression{
-		Dataset:       dataset,
-		Limit:         limit,
-		Order:         "DESC",
-		ReturnResults: true,
-		Filter:        filter,
-		Chart:         chart,
-	}
-}
-
-// CreateFilter creates a filter with the specified parameters
-func CreateFilter(key, operation, dataType string, values []string) *Filter {
-	return &Filter{
-		K:         key,
-		V:         values,
-		Op:        operation,
-		DataType:  dataType,
-		Extracted: false,
-		Computed:  false,
-	}
-}
-
-// CreateNestedFilter creates a filter with multiple conditions using AND logic
-func CreateNestedFilter(filters ...*Filter) *Filter {
-	if len(filters) == 0 {
-		return nil
-	}
-	if len(filters) == 1 {
-		return filters[0]
-	}
-
-	// Create nested filter structure
-	result := &Filter{
-		Op:      "and",
-		Filters: make(map[string]*Filter),
-	}
-
-	// Add filters dynamically with q1, q2, q3, etc.
-	for i, filter := range filters {
-		key := fmt.Sprintf("q%d", i+1)
-		result.Filters[key] = filter
-	}
-
-	return result
-}
-
-// CreateQueryParams creates query parameters
-func CreateQueryParams(startTime, endTime, tagName, dataType string) QueryParams {
-	return QueryParams{
-		StartTime: startTime,
-		EndTime:   endTime,
-		TagName:   tagName,
-		DataType:  dataType,
-	}
 }

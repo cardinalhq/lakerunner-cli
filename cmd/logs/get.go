@@ -37,7 +37,6 @@ const (
 	colorPurple = "\033[35m"
 	colorCyan   = "\033[36m"
 	colorWhite  = "\033[37m"
-	colorBold   = "\033[1m"
 )
 
 // getColorForLevel returns the appropriate color for a log level
@@ -61,28 +60,39 @@ func getColorForLevel(level string, noColor bool) string {
 	}
 }
 
+// normalizeTag converts dot-separated keys
+func normalizeTag(tag string) string {
+	return strings.ReplaceAll(tag, ".", "_")
+}
+
 var (
-	messageRegex string
-	limit        int
-	filters      []string
-	regexFilters []string
-	startTime    string
-	endTime      string
-	appName      string
-	logLevel     string
-	columns      string
+	limit              int
+	filters            []string
+	regexFilters       []string
+	startTime          string
+	endTime            string
+	appName            string
+	logLevel           string
+	columns            string
+	messageContains    string
+	messageNotContains string
+	messageRegexMatch  string
+	messageRegexNot    string
 )
 
 func init() {
-	GetCmd.Flags().StringVarP(&messageRegex, "message-regex", "m", "", "Filter logs by message regex pattern")
 	GetCmd.Flags().IntVar(&limit, "limit", 1000, "Limit the number of results returned")
 	GetCmd.Flags().StringSliceVarP(&filters, "filter", "f", []string{}, "Filter in format 'key:value' (can be used multiple times)")
-	GetCmd.Flags().StringSliceVarP(&regexFilters, "regex", "r", []string{}, "Regex filter in format 'key:value' (can be used multiple times)")
 	GetCmd.Flags().StringVarP(&startTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	GetCmd.Flags().StringVarP(&endTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	GetCmd.Flags().StringVarP(&appName, "app", "a", "", "Filter logs by application/service name")
 	GetCmd.Flags().StringVarP(&logLevel, "level", "l", "", "Filter logs by log level (e.g., ERROR, INFO, DEBUG, WARN)")
-	GetCmd.Flags().StringVarP(&columns, "columns", "c", "", "Comma or space separated columns to display (e.g., 'timestamp,level,message' or 'timestamp level message')")
+	GetCmd.Flags().StringVarP(&columns, "columns", "c", "", "Comma or space separated columns to display (e.g., 'timestamp,level,message')")
+	GetCmd.Flags().StringVarP(&messageContains, "contains", "M", "", "Filter logs where message contains this string (|=)")
+	GetCmd.Flags().StringVarP(&messageNotContains, "not-contains", "N", "", "Filter logs where message does not contain this string (!=)")
+	GetCmd.Flags().StringVarP(&messageRegexMatch, "msg-regex", "R", "", "Filter logs where message matches this regex (|~)")
+	GetCmd.Flags().StringVarP(&messageRegexNot, "msg-not-regex", "X", "", "Filter logs where message does not match this regex (!~)")
+
 }
 
 var GetCmd = &cobra.Command{
@@ -98,14 +108,9 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	if columns != "" {
 		parts := strings.Split(columns, ",")
 		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part != "" {
-				spaceParts := strings.Fields(part)
-				for _, spacePart := range spaceParts {
-					spacePart = strings.TrimSpace(spacePart)
-					if spacePart != "" {
-						selectedColumns = append(selectedColumns, spacePart)
-					}
+			for _, sp := range strings.Fields(strings.TrimSpace(part)) {
+				if sp != "" {
+					selectedColumns = append(selectedColumns, sp)
 				}
 			}
 		}
@@ -119,132 +124,69 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	}
 	client := api.NewClient(cfg)
 
-	// Parse start and end times using dateutils
+	// Parse start and end times
 	startMs, endMs, err := dateutils.ToStartEnd(startTime, endTime)
 	if err != nil {
 		return fmt.Errorf("failed to parse time range: %w", err)
 	}
+	startTimeStr := fmt.Sprintf("%d", startMs)
+	endTimeStr := fmt.Sprintf("%d", endMs)
 
-	// Convert milliseconds to ISO8601 format for API
-	startTimeStr := time.UnixMilli(startMs).UTC().Format(time.RFC3339)
-	endTimeStr := time.UnixMilli(endMs).UTC().Format(time.RFC3339)
-
-	// Start with default filter for resource.service.name
-	var filterObj *api.Filter
-
-	// If app flag is provided, use it to filter by resource.service.name
+	// Build LogQL query string
+	var conditions []string
 	if appName != "" {
-		filterObj = api.CreateFilter("resource.service.name", "eq", "string", []string{appName})
-	} else {
-		filterObj = api.CreateFilter("_cardinalhq.telemetry_type", "has", "string", []string{""})
+		conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, appName))
 	}
-
 	if logLevel != "" {
-		levelFilter := api.CreateFilter("_cardinalhq.level", "eq", "string", []string{logLevel})
-
-		if appName != "" {
-			filterObj = api.CreateNestedFilter(filterObj, levelFilter)
-		} else {
-			filterObj = levelFilter
-		}
+		conditions = append(conditions, fmt.Sprintf(`_cardinalhq_level="%s"`, logLevel))
 	}
-
-	// Add message regex filter if provided
-	if messageRegex != "" {
-		messageFilter := api.CreateFilter("_cardinalhq.message", "regex", "string", []string{messageRegex})
-
-		if filterObj != nil {
-			filterObj = api.CreateNestedFilter(filterObj, messageFilter)
-		} else {
-			filterObj = messageFilter
-		}
-	}
-
-	// Collect all filters
-	allFilters := []*api.Filter{}
-
-	// Add multiple filters if provided
 	for _, f := range filters {
 		parts := strings.SplitN(f, ":", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("filter must be in format 'key:value'")
+		if len(parts) == 2 {
+			key := normalizeTag(parts[0])
+			conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, parts[1]))
 		}
-
-		// Determine if this is a regex pattern
-		operation := "eq"
-		if strings.Contains(parts[1], "\\") || strings.Contains(parts[1], ".*") || strings.Contains(parts[1], "^") || strings.Contains(parts[1], "$") {
-			operation = "regex"
-		}
-
-		allFilters = append(allFilters, api.CreateFilter(parts[0], operation, "string", []string{parts[1]}))
 	}
-
-	// Add regex filters if provided
 	for _, f := range regexFilters {
 		parts := strings.SplitN(f, ":", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("regex filter must be in format 'key:value'")
-		}
-
-		allFilters = append(allFilters, api.CreateFilter(parts[0], "regex", "string", []string{parts[1]}))
-	}
-
-	// If we have custom filters, create nested filter
-	if len(allFilters) > 0 {
-		// Check if any filter is for resource.service.name and replace default
-		for i, f := range allFilters {
-			if f.K == "resource.service.name" {
-				filterObj = f
-				allFilters = append(allFilters[:i], allFilters[i+1:]...)
-				break
-			}
-		}
-
-		// Add remaining filters as nested conditions
-		if len(allFilters) > 0 {
-			allFilters = append([]*api.Filter{filterObj}, allFilters...)
-			filterObj = api.CreateNestedFilter(allFilters...)
+		if len(parts) == 2 {
+			key := normalizeTag(parts[0])
+			conditions = append(conditions, fmt.Sprintf(`%s=~"%s"`, key, parts[1]))
 		}
 	}
 
-	expression := api.CreateExpression("logs", limit, filterObj, nil)
-	expressions := map[string]api.Expression{
-		"a": expression,
+	q := `{resource_service_name=~".+"}` // safe default
+	if len(conditions) > 0 {
+		q = "{" + strings.Join(conditions, ", ") + "}"
 	}
 
-	req := api.CreateGraphRequest(expressions)
-	params := api.CreateQueryParams(startTimeStr, endTimeStr, "", "")
+	// add message operators
+	if messageContains != "" {
+		q += fmt.Sprintf(` |= "%s"`, messageContains)
+	}
+	if messageNotContains != "" {
+		q += fmt.Sprintf(` != "%s"`, messageNotContains)
+	}
+	if messageRegexMatch != "" {
+		q += fmt.Sprintf(` |~ "%s"`, messageRegexMatch)
+	}
+	if messageRegexNot != "" {
+		q += fmt.Sprintf(` !~ "%s"`, messageRegexNot)
+	}
 
-	// Create context with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second) // Increased timeout for streaming
+	// Context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	responseChan, err := client.QueryGraph(ctx, req, params)
+	responseChan, err := client.QueryLogs(ctx, q, startTimeStr, endTimeStr, limit, true)
 	if err != nil {
 		return fmt.Errorf("failed to query logs: %w", err)
 	}
 
-	// Display results (unless quiet mode is enabled)
 	quiet, _ := cmdObj.Flags().GetBool("quiet")
 	if !quiet {
 		fmt.Printf("Querying logs from %s to %s...\n", startTimeStr, endTimeStr)
-		if appName != "" {
-			fmt.Printf("App Filter: resource.service.name = %s\n", appName)
-		}
-		if logLevel != "" {
-			fmt.Printf("Level Filter: level = %s\n", logLevel)
-		}
-		if messageRegex != "" {
-			fmt.Printf("Message Regex Filter: _cardinalhq.message = %s\n", messageRegex)
-		}
-		if len(filters) > 0 || len(regexFilters) > 0 {
-			for _, f := range filters {
-				fmt.Printf("Filter: %s\n", f)
-			}
-			for _, f := range regexFilters {
-				fmt.Printf("Regex Filter: %s\n", f)
-			}
-		}
+		fmt.Printf("LogQL: %s\n", q)
 		fmt.Printf("Limit: %d results\n", limit)
 		if len(selectedColumns) > 0 {
 			fmt.Printf("Columns: %v\n", selectedColumns)
@@ -253,17 +195,15 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	}
 
 	responseCount := 0
-	startTime := time.Now()
+	started := time.Now()
 
-	// Start a goroutine to show progress (unless quiet mode is enabled)
 	if !quiet {
 		progressTicker := time.NewTicker(2 * time.Second)
 		defer progressTicker.Stop()
-
 		go func() {
 			for range progressTicker.C {
 				if responseCount == 0 {
-					elapsed := time.Since(startTime)
+					elapsed := time.Since(started)
 					fmt.Fprintf(os.Stderr, "\rWaiting for logs... (%v elapsed)", elapsed.Round(time.Second))
 				}
 			}
@@ -272,151 +212,99 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 
 	for response := range responseChan {
 		responseCount++
-
-		// Clear progress line when we get first response (unless quiet mode is enabled)
 		if responseCount == 1 && !quiet {
 			fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 50))
 		}
+		message := response.Data
 
-		if response.Type == "timeseries" || response.Type == "event" || response.Type == "data" {
-			// Extract key log information
-			message := response.Message
+		// Get timestamp with proper precision handling
+		timestamp := ""
+		// Check for nanosecond precision first (now preserved as int64)
+		if tsns, ok := message["tsns"].(int64); ok {
+			// tsns is in nanoseconds
+			timestamp = time.Unix(0, tsns).Format("2006-01-02 15:04:05.999999999")
+		} else if ts, ok := message["timestamp"].(int64); ok {
+			// timestamp is in milliseconds as int64
+			timestamp = time.UnixMilli(ts).Format("2006-01-02 15:04:05.000")
+		} else if ts, ok := message["timestamp"].(float64); ok {
+			timestamp = time.Unix(int64(ts)/1000, 0).Format("2006-01-02 15:04:05")
+		}
 
-			// Get timestamp with proper precision handling
-			timestamp := ""
-
-			// Check for nanosecond precision first (now preserved as int64)
-			if tsns, ok := message["tsns"].(int64); ok {
-				// tsns is in nanoseconds
-				timestamp = time.Unix(0, tsns).Format("2006-01-02 15:04:05.999999999")
-			} else if ts, ok := message["timestamp"].(int64); ok {
-				// timestamp is in milliseconds as int64
-				timestamp = time.UnixMilli(ts).Format("2006-01-02 15:04:05.000")
+		logMessage := ""
+		if tags, ok := message["tags"].(map[string]interface{}); ok {
+			if msg, ok := tags["_cardinalhq.message"].(string); ok {
+				logMessage = msg
 			}
+		}
 
-			// Get log message
-			logMessage := ""
-			if tags, ok := message["tags"].(map[string]interface{}); ok {
-				if msg, ok := tags["_cardinalhq.message"].(string); ok {
-					logMessage = msg
-				}
+		serviceName := ""
+		if tags, ok := message["tags"].(map[string]interface{}); ok {
+			if service, ok := tags["resource.service.name"].(string); ok {
+				serviceName = service
 			}
+		}
 
-			// Get service name
-			serviceName := ""
-			if tags, ok := message["tags"].(map[string]interface{}); ok {
-				if service, ok := tags["resource.service.name"].(string); ok {
-					serviceName = service
-				}
+		levelVal := ""
+		if tags, ok := message["tags"].(map[string]interface{}); ok {
+			if level, ok := tags["_cardinalhq.level"].(string); ok {
+				levelVal = level
 			}
+		}
 
-			// Get log level
-			logLevel := ""
-			if tags, ok := message["tags"].(map[string]interface{}); ok {
-				if level, ok := tags["_cardinalhq.level"].(string); ok {
-					logLevel = level
-				}
+		podName := ""
+		if tags, ok := message["tags"].(map[string]interface{}); ok {
+			if pod, ok := tags["resource.k8s.pod.name"].(string); ok {
+				podName = pod
 			}
+		}
 
-			// Get pod name
-			podName := ""
-			if tags, ok := message["tags"].(map[string]interface{}); ok {
-				if pod, ok := tags["resource.k8s.pod.name"].(string); ok {
-					podName = pod
-				}
-			}
-
-			// If columns are specified, show only those columns
-			if len(selectedColumns) > 0 {
-				var outputParts []string
-
-				for _, col := range selectedColumns {
-					var value string
-					var color string
-
-					switch strings.ToLower(col) {
-					case "timestamp":
-						value = timestamp
-						color = colorBlue
-					case "level":
-						value = logLevel
-						color = getColorForLevel(logLevel, noColor)
-					case "message":
-						value = logMessage
-						color = colorReset
-					case "service":
-						value = serviceName
-						color = colorCyan
-					case "pod":
-						value = podName
-						color = colorPurple
-					default:
-						// Try to find the value in tags, with _cardinalhq prefix mapping
-						if tags, ok := message["tags"].(map[string]interface{}); ok {
-							// First try the exact column name
-							if val, ok := tags[col].(string); ok {
-								value = val
-								color = colorCyan
-							} else if val, ok := tags[col].(float64); ok {
-								value = fmt.Sprintf("%v", val)
-								color = colorCyan
-							} else if val, ok := tags[col].(bool); ok {
-								value = fmt.Sprintf("%v", val)
-								color = colorCyan
-							} else {
-								// Try with _cardinalhq prefix
-								cardinalhqKey := "_cardinalhq." + col
-								if val, ok := tags[cardinalhqKey].(string); ok {
-									value = val
-									color = colorCyan
-								} else if val, ok := tags[cardinalhqKey].(float64); ok {
-									value = fmt.Sprintf("%v", val)
-									color = colorCyan
-								} else if val, ok := tags[cardinalhqKey].(bool); ok {
-									value = fmt.Sprintf("%v", val)
-									color = colorCyan
-								}
-							}
+		if len(selectedColumns) > 0 {
+			var parts []string
+			for _, col := range selectedColumns {
+				val := ""
+				switch strings.ToLower(col) {
+				case "timestamp":
+					val = timestamp
+				case "level":
+					val = levelVal
+				case "message":
+					val = logMessage
+				case "service":
+					val = serviceName
+				case "pod":
+					val = podName
+				default:
+					if tags, ok := message["tags"].(map[string]interface{}); ok {
+						if v, ok := tags[col]; ok {
+							val = fmt.Sprintf("%v", v)
+						} else if v, ok := tags["_cardinalhq."+col]; ok {
+							val = fmt.Sprintf("%v", v)
 						}
 					}
-
-					if noColor {
-						outputParts = append(outputParts, value)
-					} else {
-						outputParts = append(outputParts, fmt.Sprintf("%s%s%s", color, value, colorReset))
-					}
 				}
-
-				fmt.Println(strings.Join(outputParts, " "))
+				parts = append(parts, val)
+			}
+			fmt.Println(strings.Join(parts, " "))
+		} else {
+			if noColor {
+				fmt.Printf("[%s] %s %s %s: %s\n", timestamp, levelVal, serviceName, podName, logMessage)
 			} else {
-				levelColor := getColorForLevel(logLevel, noColor)
-				timestampColor := colorBlue
-				serviceColor := colorCyan
-				podColor := colorPurple
-
-				if noColor {
-					fmt.Printf("[%s] %s %s %s: %s\n",
-						timestamp, logLevel, serviceName, podName, logMessage)
-				} else {
-					fmt.Printf("[%s%s%s] %s%s%s %s%s%s %s%s%s: %s\n",
-						timestampColor, timestamp, colorReset,
-						levelColor, logLevel, colorReset,
-						serviceColor, serviceName, colorReset,
-						podColor, podName, colorReset,
-						logMessage)
-				}
+				fmt.Printf("[%s%s%s] %s%s%s %s%s%s %s%s%s: %s\n",
+					colorBlue, timestamp, colorReset,
+					getColorForLevel(levelVal, noColor), levelVal, colorReset,
+					colorCyan, serviceName, colorReset,
+					colorPurple, podName, colorReset,
+					logMessage)
 			}
+		}
 
-			// Early termination if we've reached the limit
-			if responseCount >= limit {
-				break
-			}
+		if responseCount >= limit {
+			break
 		}
 	}
 
 	if responseCount == 0 && !quiet {
 		fmt.Println("No responses received from the API")
 	}
-
 	return nil
 }
