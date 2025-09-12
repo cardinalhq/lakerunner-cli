@@ -68,7 +68,6 @@ func normalizeTag(tag string) string {
 var (
 	limit              int
 	filters            []string
-	regexFilters       []string
 	startTime          string
 	endTime            string
 	appName            string
@@ -92,7 +91,8 @@ func init() {
 	GetCmd.Flags().StringVarP(&messageNotContains, "not-contains", "N", "", "Filter logs where message does not contain this string (!=)")
 	GetCmd.Flags().StringVarP(&messageRegexMatch, "msg-regex", "R", "", "Filter logs where message matches this regex (|~)")
 	GetCmd.Flags().StringVarP(&messageRegexNot, "msg-not-regex", "X", "", "Filter logs where message does not match this regex (!~)")
-
+	GetCmd.Flags().Bool("no-color", false, "Disable colored output")
+	GetCmd.Flags().Bool("quiet", false, "Suppress query and progress output")
 }
 
 var GetCmd = &cobra.Command{
@@ -147,15 +147,8 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 			conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, parts[1]))
 		}
 	}
-	for _, f := range regexFilters {
-		parts := strings.SplitN(f, ":", 2)
-		if len(parts) == 2 {
-			key := normalizeTag(parts[0])
-			conditions = append(conditions, fmt.Sprintf(`%s=~"%s"`, key, parts[1]))
-		}
-	}
 
-	q := `{resource_service_name=~".+"}` // safe default
+	q := `{resource_service_name=~".+"}`
 	if len(conditions) > 0 {
 		q = "{" + strings.Join(conditions, ", ") + "}"
 	}
@@ -263,22 +256,40 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 			for _, col := range selectedColumns {
 				val := ""
 				switch strings.ToLower(col) {
-				case "timestamp":
-					val = timestamp
+				case "timestamp", "ts":
+					if noColor {
+						val = timestamp
+					} else {
+						val = fmt.Sprintf("%s%s%s", colorBlue, timestamp, colorReset)
+					}
 				case "level":
-					val = levelVal
+					if noColor {
+						val = levelVal
+					} else {
+						val = fmt.Sprintf("%s%s%s", getColorForLevel(levelVal, noColor), levelVal, colorReset)
+					}
 				case "message":
 					val = logMessage
-				case "service":
-					val = serviceName
+				case "service", "svc":
+					if noColor {
+						val = serviceName
+					} else {
+						val = fmt.Sprintf("%s%s%s", colorCyan, serviceName, colorReset)
+					}
 				case "pod":
-					val = podName
+					if noColor {
+						val = podName
+					} else {
+						val = fmt.Sprintf("%s%s%s", colorPurple, podName, colorReset)
+					}
 				default:
 					if tags, ok := message["tags"].(map[string]interface{}); ok {
 						if v, ok := tags[col]; ok {
 							val = fmt.Sprintf("%v", v)
 						} else if v, ok := tags["_cardinalhq."+col]; ok {
 							val = fmt.Sprintf("%v", v)
+						} else {
+							val = "<undefined>"
 						}
 					}
 				}

@@ -53,7 +53,6 @@ var TagValuesCmd = &cobra.Command{
 
 func init() {
 	AttributesCmd.Flags().StringSliceVarP(&attributesFilters, "filter", "f", []string{}, "Filter in format 'key:value' (can be used multiple times)")
-	AttributesCmd.Flags().StringSliceVarP(&attributesRegexFilters, "regex", "r", []string{}, "Regex filter in format 'key:value' (can be used multiple times)")
 	AttributesCmd.Flags().StringVarP(&attributesStartTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	AttributesCmd.Flags().StringVarP(&attributesEndTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	AttributesCmd.Flags().StringVarP(&attributesAppName, "app", "a", "", "Filter by application/service name")
