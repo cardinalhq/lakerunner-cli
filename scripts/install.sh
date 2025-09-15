@@ -19,6 +19,9 @@
 
 set -e
 
+# Helm Chart Versions
+LAKERUNNER_VERSION="0.8.5"
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -721,7 +724,7 @@ install_lakerunner() {
     print_status "Installing LakeRunner in namespace: $NAMESPACE"
     
     helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
-        --version 0.8.5 \
+        --version $LAKERUNNER_VERSION \
         --values generated/values-local.yaml \
         --namespace $NAMESPACE
     print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
