@@ -25,7 +25,6 @@ import (
 	"github.com/lakerunner/cli/internal/api"
 	"github.com/lakerunner/cli/internal/config"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 // Color constants
@@ -94,9 +93,6 @@ var GetCmd = &cobra.Command{
 
 func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	noColor, _ := cmdObj.Flags().GetBool("no-color")
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		noColor = true
-	}
 
 	var selectedColumns []string
 	if columns != "" {
