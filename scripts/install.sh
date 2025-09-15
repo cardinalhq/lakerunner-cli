@@ -14,19 +14,19 @@
 # limitations under the License.
 
 
-# LakeRunner Install Script
-# This script installs LakeRunner with local MinIO and PostgreSQL
+# Lakerunner Install Script
+# This script installs Lakerunner with local MinIO and PostgreSQL
 
 set -e
 
 # Helm Chart Versions
-LAKERUNNER_VERSION="0.8.5"
+LAKERUNNER_VERSION="0.9.0-rc4"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' 
+NC='\033[0m'
 
 print_status() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -50,25 +50,25 @@ command_exists() {
 
 check_prerequisites() {
     print_status "Checking prerequisites..."
-    
+
     local missing_deps=()
-    
+
     if ! command_exists kubectl; then
         missing_deps+=("kubectl")
     fi
-    
+
     if ! command_exists helm; then
         missing_deps+=("helm")
     fi
-    
+
     if ! command_exists base64; then
         missing_deps+=("base64")
     fi
-    
+
     if ! command_exists curl; then
         missing_deps+=("curl")
     fi
-    
+
     if [ ${#missing_deps[@]} -ne 0 ]; then
         print_error "Missing required dependencies: ${missing_deps[*]}"
         echo "Please install the missing dependencies and try again."
@@ -78,7 +78,7 @@ check_prerequisites() {
         echo "  - curl: Usually pre-installed on most systems"
         exit 1
     fi
-    
+
     if ! kubectl cluster-info >/dev/null 2>&1; then
         print_error "Cannot connect to Kubernetes cluster. Please ensure:"
         echo "  1. You have a Kubernetes cluster running (minikube, kind, etc.)"
@@ -86,7 +86,7 @@ check_prerequisites() {
         echo "  3. You have the necessary permissions"
         exit 1
     fi
-    
+
     print_success "All prerequisites are satisfied"
 }
 
@@ -94,7 +94,7 @@ get_input() {
     local prompt="$1"
     local default="$2"
     local var_name="$3"
-    
+
     if [ -n "$default" ]; then
         read -p "$prompt [$default]: " input
         if [ -z "$input" ]; then
@@ -103,7 +103,7 @@ get_input() {
     else
         read -p "$prompt: " input
     fi
-    
+
     eval "$var_name=\"$input\""
 }
 
@@ -112,15 +112,15 @@ get_namespace() {
 
     echo
     echo "=== Namespace Configuration ==="
-    echo "LakeRunner will be installed in a Kubernetes namespace."
+    echo "Lakerunner will be installed in a Kubernetes namespace."
 
-    get_input "Enter namespace for LakeRunner installation" "$default_namespace" "NAMESPACE"
+    get_input "Enter namespace for Lakerunner installation" "$default_namespace" "NAMESPACE"
 }
 
 get_infrastructure_preferences() {
     echo
     echo "=== Infrastructure Configuration ==="
-    echo "LakeRunner needs a PostgreSQL database and S3-compatible storage."
+    echo "Lakerunner needs a PostgreSQL database and S3-compatible storage."
     echo "You can use local installations or connect to existing infrastructure."
     echo
 
@@ -193,7 +193,7 @@ get_infrastructure_preferences() {
             echo "You'll need to manually configure:"
             echo "1. S3 bucket notifications to send events to your SQS queue"
             echo "2. SQS queue policy to allow S3 to send messages"
-            echo "3. IAM permissions for LakeRunner to read from SQS"
+            echo "3. IAM permissions for Lakerunner to read from SQS"
             echo
             echo "For detailed setup instructions, visit:"
             echo "https://github.com/cardinalhq/lakerunner"
@@ -209,7 +209,7 @@ get_infrastructure_preferences() {
 get_telemetry_preferences() {
     echo
     echo "=== Telemetry Configuration ==="
-    echo "LakeRunner can process logs, metrics, and traces."
+    echo "Lakerunner can process logs, metrics, and traces."
     echo "Choose which telemetry types you want to enable:"
     echo
 
@@ -250,7 +250,7 @@ get_telemetry_preferences() {
 
     echo
     echo "=== Cardinal Telemetry Collection ==="
-    echo "LakeRunner can send <0.1% of telemetry data to Cardinal for automatic intelligent alerts."
+    echo "Lakerunner can send <0.1% of telemetry data to Cardinal for automatic intelligent alerts."
     echo "This helps improve the product and provides proactive monitoring."
     echo
 
@@ -268,8 +268,8 @@ get_telemetry_preferences() {
 
 get_lakerunner_credentials() {
     echo
-    echo "=== LakeRunner Credentials ==="
-    echo "LakeRunner needs an organization ID and API key for authentication."
+    echo "=== Lakerunner Credentials ==="
+    echo "Lakerunner needs an organization ID and API key for authentication."
     echo
 
     get_input "Enter organization ID (or press Enter for default)" "151f346b-967e-4c94-b97a-581898b5b457" "ORG_ID"
@@ -323,10 +323,10 @@ install_minio() {
             print_warning "MinIO is already installed. Skipping..."
             return
         fi
-        
+
         helm repo add minio https://charts.min.io/ >/dev/null 2>&1 || true
         helm repo update >/dev/null  2>&1
-        
+
         helm install minio minio/minio \
             --namespace "$NAMESPACE" \
             --set accessKey=minioadmin \
@@ -343,10 +343,10 @@ install_minio() {
             --set service.ports[1].name=console \
             --set service.ports[1].port=9001 \
             --set service.ports[1].targetPort=9001 >/dev/null  2>&1
-        
+
         print_status "Waiting for MinIO to be ready..."
         kubectl wait --for=condition=ready pod -l app=minio -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
-                
+
         print_success "MinIO installed successfully"
     else
         print_status "Skipping MinIO installation (using existing S3 storage)"
@@ -356,15 +356,15 @@ install_minio() {
 install_postgresql() {
     if [ "$INSTALL_POSTGRES" = true ]; then
         print_status "Installing PostgreSQL..."
-        
+
         if helm list | grep -q "postgres"; then
             print_warning "PostgreSQL is already installed. Skipping..."
             return
         fi
-        
+
         helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
         helm repo update >/dev/null  2>&1
-        
+
         helm install postgres bitnami/postgresql \
             --namespace "$NAMESPACE" \
             --set auth.username=lakerunner \
@@ -373,10 +373,10 @@ install_postgresql() {
             --set-string primary.initdb.scripts.create-config-db\\.sql="CREATE DATABASE configdb;" \
             --set persistence.enabled=true \
             --set persistence.size=8Gi >/dev/null  2>&1
-        
+
         print_status "Waiting for PostgreSQL to be ready..."
         kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=postgresql -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
-        
+
         print_success "PostgreSQL installed successfully"
     else
         print_status "Skipping PostgreSQL installation (using existing database)"
@@ -386,32 +386,60 @@ install_postgresql() {
 install_kafka() {
     if [ "$INSTALL_KAFKA" = true ]; then
         print_status "Installing Kafka..."
-        
+
         if helm list | grep -q "kafka"; then
             print_warning "Kafka is already installed. Skipping..."
             return
         fi
-        
+
         helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
         helm repo update >/dev/null  2>&1
-        
+
+        # Create temporary Kafka values file
+        cat > /tmp/kafka-values.yaml << EOF
+controller:
+  replicaCount: 1
+
+broker:
+  replicaCount: 0
+
+persistence:
+  enabled: true
+  size: 8Gi
+
+auth:
+  clientProtocol: plaintext
+  interBrokerProtocol: plaintext
+
+listeners:
+  client:
+    protocol: PLAINTEXT
+  controller:
+    protocol: PLAINTEXT
+  interbroker:
+    protocol: PLAINTEXT
+  external:
+    protocol: PLAINTEXT
+
+overrideConfiguration: |
+  offsets.topic.replication.factor: 1
+  transaction.state.log.replication.factor: 1
+
+service:
+  ports:
+    client: 9092
+EOF
+
         helm install kafka bitnami/kafka \
             --namespace "$NAMESPACE" \
-            --set persistence.enabled=true \
-            --set persistence.size=8Gi \
-            --set zookeeper.persistence.enabled=true \
-            --set zookeeper.persistence.size=2Gi \
-            --set auth.clientProtocol=plaintext \
-            --set auth.interBrokerProtocol=plaintext \
-            --set listeners.client.protocol=PLAINTEXT \
-            --set listeners.controller.protocol=PLAINTEXT \
-            --set listeners.interbroker.protocol=PLAINTEXT \
-            --set listeners.external.protocol=PLAINTEXT \
-            --set service.ports.client=9092 >/dev/null  2>&1
-        
+            --values /tmp/kafka-values.yaml >/dev/null 2>&1
+
+        # Clean up temporary file
+        rm -f /tmp/kafka-values.yaml
+
         print_status "Waiting for Kafka to be ready..."
         kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kafka -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
-        
+
         print_success "Kafka installed successfully"
     else
         print_status "Skipping Kafka installation (using existing Kafka)"
@@ -427,7 +455,7 @@ generate_values_file() {
 
     AUTH_TOKEN=$(generate_random_string)
     print_status "Auto-generated internal auth token for service communication"
-    
+
     # After MinIO is installed and before generating values-local.yaml, set credentials:
     if [ "$INSTALL_MINIO" = true ]; then
         MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
@@ -436,7 +464,7 @@ generate_values_file() {
         MINIO_ACCESS_KEY="$S3_ACCESS_KEY"
         MINIO_SECRET_KEY="$S3_SECRET_KEY"
     fi
-    
+
     cat > generated/values-local.yaml << EOF
 # Local development values for lakerunner
 # Configured for $([ "$INSTALL_POSTGRES" = true ] && echo "local PostgreSQL" || echo "external PostgreSQL") and $([ "$INSTALL_MINIO" = true ] && echo "local MinIO" || echo "external S3 storage")
@@ -510,35 +538,42 @@ cloudProvider:
     accessKeyId: "$MINIO_ACCESS_KEY"
     secretAccessKey: "$MINIO_SECRET_KEY"
 
+kafkaTopics:
+  config:
+    version: 2
+    defaults:
+      partitionCount: 1
+      replicationFactor: 1
+
 # Kafka configuration
-$([ "$INSTALL_KAFKA" = true ] && echo "kafka:" || echo "# kafka:")
-$([ "$INSTALL_KAFKA" = true ] && echo "  enabled: true" || echo "# enabled: false")
-$([ "$INSTALL_KAFKA" = true ] && echo "  bootstrapServers: \"kafka.$NAMESPACE.svc.cluster.local:9092\"" || echo "# bootstrapServers: \"$KAFKA_BOOTSTRAP_SERVERS\"")
-$([ "$INSTALL_KAFKA" = false ] && [ -n "$KAFKA_USERNAME" ] && echo "# auth:" || echo "# # auth:")
-$([ "$INSTALL_KAFKA" = false ] && [ -n "$KAFKA_USERNAME" ] && echo "#   username: \"$KAFKA_USERNAME\"" || echo "# #   username: \"\"")
-$([ "$INSTALL_KAFKA" = false ] && [ -n "$KAFKA_PASSWORD" ] && echo "#   password: \"$KAFKA_PASSWORD\"" || echo "# #   password: \"\"")
+kafka:
+  enabled: $INSTALL_KAFKA
+$([ "$INSTALL_KAFKA" = true ] && echo "  brokers: \"kafka.$NAMESPACE.svc.cluster.local:9092\"" || echo "  brokers: \"$KAFKA_BOOTSTRAP_SERVERS\"")
+  sasl:
+$([ -n "$KAFKA_USERNAME" ] && [ -n "$KAFKA_PASSWORD" ] && echo "    enabled: true" || echo "    enabled: false")
+$([ -n "$KAFKA_USERNAME" ] && echo "    username: \"$KAFKA_USERNAME\"" || echo "#   username: \"\"")
+$([ -n "$KAFKA_PASSWORD" ] && echo "    password: \"$KAFKA_PASSWORD\"" || echo "#   password: \"\"")
+  tls:
+    enabled: $([ "$INSTALL_KAFKA" = true ] && echo "false" || echo "true")
 
 # Global configuration
 global:
+  resources:
+    enabled: false
+  autoscaling:
+    mode: disabled
 $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "  # Cardinal telemetry configuration" || echo "  # Cardinal telemetry configuration (disabled)")
 $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "  cardinal:" || echo "  # cardinal:")
 $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "    apiKey: \"$CARDINAL_API_KEY\"" || echo "  #   apiKey: \"\"")
-  # Required empty objects to prevent nil pointer errors
-  labels: {}
-  annotations: {}
-  # Global environment variables for all LakeRunner components
-  env:
-$([ "$INSTALL_KAFKA" = true ] && echo "    # Kafka configuration for LakeRunner" || echo "    # Kafka configuration (disabled)")
-$([ "$INSTALL_KAFKA" = true ] && echo "    - name: LAKERUNNER_FLY_ENABLED" || echo "    # - name: LAKERUNNER_FLY_ENABLED")
-$([ "$INSTALL_KAFKA" = true ] && echo "      value: \"true\"" || echo "    #   value: \"false\"")
-$([ "$INSTALL_KAFKA" = true ] && echo "    - name: LAKERUNNER_FLY_BROKERS" || echo "    # - name: LAKERUNNER_FLY_BROKERS")
-$([ "$INSTALL_KAFKA" = true ] && echo "      value: \"kafka.$NAMESPACE.svc.cluster.local:9092\"" || echo "    #   value: \"$KAFKA_BOOTSTRAP_SERVERS\"")
+$([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && [ -n "$LAKERUNNER_CARDINAL_ENV" ] && echo "    env: \"$LAKERUNNER_CARDINAL_ENV\"" || echo "")
+  # Global environment variables for all Lakerunner components
+  # env:
 
 # PubSub configuration
 pubsub:
   HTTP:
     enabled: $([ "$USE_SQS" = true ] && echo "false" || echo "true")
-    replicas: 1  # Reduce for local development
+    replicas: 1
 
   SQS:
     enabled: $([ "$USE_SQS" = true ] && echo "true" || echo "false")
@@ -558,7 +593,7 @@ setup:
 
 ingestLogs:
   enabled: $([ "$ENABLE_LOGS" = true ] && echo "true" || echo "false")
-  replicas: 1  # Reduce for local development
+  replicas: 1
   resources:
     requests:
       cpu: 200m
@@ -571,7 +606,7 @@ ingestLogs:
 
 ingestMetrics:
   enabled: $([ "$ENABLE_METRICS" = true ] && echo "true" || echo "false")
-  replicas: 1  # Reduce for local development
+  replicas: 1
   resources:
     requests:
       cpu: 500m
@@ -584,7 +619,7 @@ ingestMetrics:
 
 ingestTraces:
   enabled: $([ "$ENABLE_TRACES" = true ] && echo "true" || echo "false")
-  replicas: 1  # Reduce for local development
+  replicas: 1
   resources:
     requests:
       cpu: 500m
@@ -593,7 +628,7 @@ ingestTraces:
       cpu: 1000m
       memory: 400Mi
   autoscaling:
-    enabled: false  # Disable autoscaling for local development
+    enabled: false
 
 compactLogs:
   enabled: $([ "$ENABLE_LOGS" = true ] && echo "true" || echo "false")
@@ -658,7 +693,7 @@ sweeper:
       cpu: 100m
       memory: 100Mi
 
-queryApiV2:
+queryApi:
   enabled: true
   replicas: 1
   resources:
@@ -671,16 +706,16 @@ queryApiV2:
   temporaryStorage:
     size: "8Gi"  # Reduce for local development
 
-queryWorkerV2:
+queryWorker:
   enabled: true
-  replicas: 2 # Pin for local development
+  replicas: 2
   resources:
     requests:
       cpu: 500m
-      memory: 2Gi
+      memory: 1Gi
     limits:
       cpu: 500m
-      memory: 2Gi
+      memory: 1Gi
 
 # Grafana configuration
 grafana:
@@ -719,20 +754,20 @@ EOF
     print_success "generated/values-local.yaml generated successfully"
 }
 
-# Function to install LakeRunner
+# Function to install Lakerunner
 install_lakerunner() {
-    print_status "Installing LakeRunner in namespace: $NAMESPACE"
-    
+    print_status "Installing Lakerunner in namespace: $NAMESPACE"
+
     helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
         --version $LAKERUNNER_VERSION \
         --values generated/values-local.yaml \
         --namespace $NAMESPACE
-    print_success "LakeRunner installed successfully in namespace: $NAMESPACE"
+    print_success "Lakerunner installed successfully in namespace: $NAMESPACE"
 }
 
 # Function to wait for services to be ready
 wait_for_services() {
-    print_status "Waiting for LakeRunner services to be ready in namespace: $NAMESPACE"
+    print_status "Waiting for Lakerunner services to be ready in namespace: $NAMESPACE"
     # Check if setup job exists and wait for it to complete
     if kubectl get job lakerunner-setup -n "$NAMESPACE" >/dev/null 2>&1; then
         print_status "Waiting for setup job to complete..."
@@ -747,7 +782,7 @@ wait_for_services() {
 }
 
 setup_port_forwarding() {
-    print_status "Setting up port forwarding for LakeRunner services..."
+    print_status "Setting up port forwarding for Lakerunner services..."
 
     # Kill any existing port forwarding processes
     if command -v pkill >/dev/null 2>&1; then
@@ -765,18 +800,18 @@ setup_port_forwarding() {
     # Setup MinIO port forwarding if using local MinIO
     if [ "$INSTALL_MINIO" = true ]; then
         print_status "Setting up port forwarding for MinIO Console..."
-        
+
         # Start port forwarding in background
         print_status "Starting MinIO port forwarding..."
         kubectl -n "$NAMESPACE" port-forward svc/minio 9000:9000 > /dev/null 2>&1 &
         sleep 2
         kubectl -n "$NAMESPACE" port-forward svc/minio-console 9001:9001 > /dev/null 2>&1 &
-        
+
     else
         print_status "Skipping MinIO port forwarding (using external S3 storage)"
     fi
 
-    print_status "Starting LakeRunner Query API port forwarding..."
+    print_status "Starting Lakerunner Query API port forwarding..."
     kubectl -n "$NAMESPACE" port-forward svc/lakerunner-query-api-v2 8080:8080 > /dev/null 2>&1 &
     sleep 2
 
@@ -786,11 +821,11 @@ setup_port_forwarding() {
 }
 
 display_connection_info() {
-    print_success "LakeRunner installation completed successfully!"
+    print_success "Lakerunner installation completed successfully!"
     echo
     echo "=== Connection Information ==="
     echo
-    
+
     echo "Telemetry Configuration:"
     if [ "$ENABLE_LOGS" = true ]; then
         echo "  Logs: Enabled"
@@ -807,7 +842,7 @@ display_connection_info() {
     else
         echo "  Traces: Disabled"
     fi
-    
+
     if [ "$ENABLE_CARDINAL_TELEMETRY" = true ]; then
         echo "  Cardinal Telemetry: Enabled"
         echo "  Cardinal Dashboard: https://app.cardinalhq.io"
@@ -815,11 +850,11 @@ display_connection_info() {
         echo "  Cardinal Telemetry: Disabled"
     fi
     echo
-    
+
     # Get MinIO credentials
     MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
     MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
-    
+
     if [ "$INSTALL_MINIO" = true ]; then
         echo "MinIO Console:"
         echo "  URL: http://localhost:9001"
@@ -832,7 +867,7 @@ display_connection_info() {
         echo "  Region: $S3_REGION"
         echo
     fi
-    
+
     if [ "$INSTALL_POSTGRES" = true ]; then
         echo "PostgreSQL:"
         echo "  Host: postgres-postgresql.$NAMESPACE.svc.cluster.local"
@@ -849,7 +884,7 @@ display_connection_info() {
         echo "  Username: $POSTGRES_USER"
         echo
     fi
-    
+
     if [ "$INSTALL_KAFKA" = true ]; then
         echo "Kafka:"
         echo "  Bootstrap Servers: kafka.$NAMESPACE.svc.cluster.local:9092"
@@ -863,17 +898,17 @@ display_connection_info() {
         fi
         echo
     fi
-    
+
     if [ "$USE_SQS" = true ]; then
-        echo "LakeRunner PubSub SQS Configuration:"
+        echo "Lakerunner PubSub SQS Configuration:"
         echo "  Queue URL: $SQS_QUEUE_URL"
         echo "  Region: $SQS_REGION"
         echo
     else
-            echo "LakeRunner PubSub HTTP Endpoint:"
+            echo "Lakerunner PubSub HTTP Endpoint:"
     echo "  URL: http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/"
     echo
-    
+
     echo "Grafana Dashboard:"
     echo "  URL: http://localhost:3000"
     echo "  Username: admin"
@@ -881,7 +916,7 @@ display_connection_info() {
     echo "  Datasource: Cardinal (pre-configured)"
     echo
     fi
-    
+
     echo "=== Next Steps ==="
     if [ "$INSTALL_MINIO" = true ]; then
         echo "1. Access MinIO Console at http://localhost:9001"
@@ -889,13 +924,13 @@ display_connection_info() {
     else
         echo "1. Ensure your S3 bucket '$S3_BUCKET' exists and is accessible"
     fi
-    
+
     if [ "$USE_SQS" = true ]; then
         echo "2. Configure S3 bucket notifications to send events to your SQS queue:"
         echo "   - Queue ARN: arn:aws:sqs:$SQS_REGION:$(echo $SQS_QUEUE_URL | cut -d'/' -f4):$(echo $SQS_QUEUE_URL | cut -d'/' -f5)"
         echo "   - Event types: s3:ObjectCreated:*"
         echo "3. Configure SQS queue policy to allow S3 to send messages"
-        echo "4. Ensure IAM permissions for LakeRunner to read from SQS"
+        echo "4. Ensure IAM permissions for Lakerunner to read from SQS"
     else
         echo "2. Configure event notifications in your S3-compatible storage:"
         echo "   - Add event notification pointing to:"
@@ -903,7 +938,7 @@ display_connection_info() {
         echo "3. The event notification ARN should appear in the bucket configuration"
     fi
     echo
-    
+
     if [ "$ENABLE_CARDINAL_TELEMETRY" = true ]; then
         echo "4. Cardinal Telemetry is enabled and sending data to Cardinal"
         echo "   You can view your telemetry data at: https://app.cardinalhq.io"
@@ -921,7 +956,7 @@ display_connection_info() {
         echo "These apps will generate sample telemetry data that will be:"
         echo "1. Collected by the OpenTelemetry Collector"
         echo "2. Exported to MinIO S3 storage"
-        echo "3. Processed by LakeRunner"
+        echo "3. Processed by Lakerunner"
         echo "4. Available in Grafana dashboard"
         echo
         echo "To access the demo applications:"
@@ -929,7 +964,7 @@ display_connection_info() {
         echo "  Then visit: http://localhost:8080"
         echo
         echo "The demo apps will continuously generate logs, metrics, and traces"
-        echo "that will flow through LakeRunner for processing and analysis."
+        echo "that will flow through Lakerunner for processing and analysis."
         echo
     fi
 
@@ -940,7 +975,7 @@ ask_install_otel_demo() {
     echo "=== OpenTelemetry Demo Apps ==="
     echo "Would you like to install the OpenTelemetry demo applications?"
     echo "This will deploy a sample e-commerce application that generates"
-    echo "logs, metrics, and traces to demonstrate LakeRunner in action."
+    echo "logs, metrics, and traces to demonstrate Lakerunner in action."
     echo
 
     get_input "Install OTEL demo apps? (Y/n)" "Y" "INSTALL_OTEL_DEMO"
@@ -1163,15 +1198,15 @@ EOF
 
 setup_minio_webhooks() {
     if [ "$INSTALL_MINIO" = true ]; then
-        print_status "Setting up MinIO webhooks for LakeRunner event notifications..."
-        
+        print_status "Setting up MinIO webhooks for Lakerunner event notifications..."
+
         # Check if lakerunner bucket exists and create if needed
         MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
         MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
         S3_BUCKET=${S3_BUCKET:-lakerunner}
-        
+
         kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
-        
+
         if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/$S3_BUCKET >/dev/null 2>&1; then
             print_warning "lakerunner bucket does not exist. Creating it..."
             kubectl exec -n "$NAMESPACE" deployment/minio -- mc mb minio/lakerunner
@@ -1179,7 +1214,7 @@ setup_minio_webhooks() {
         else
             print_success "lakerunner bucket already exists"
         fi
-        
+
         # Configure webhook notifications
         print_status "Configuring MinIO webhook notifications..."
         if kubectl exec -n "$NAMESPACE" deployment/minio -- mc admin config set minio notify_webhook:create_object endpoint="http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/" 2>/dev/null; then
@@ -1187,29 +1222,29 @@ setup_minio_webhooks() {
         else
             print_warning "Failed to set webhook configuration, continuing..."
         fi
-        
+
         print_status "Restarting MinIO to apply configuration..."
         kubectl rollout restart deployment/minio -n "$NAMESPACE" >/dev/null 2>&1
-        
+
         print_status "Waiting for MinIO to restart..."
         kubectl rollout status deployment/minio -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
-        
+
         # Wait a bit more for MinIO to be fully ready
         sleep 5
         print_success "MinIO restarted successfully"
-        
+
         # Re-setup mc alias after pod restart
         print_status "Re-establishing MinIO connection..."
         kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
-        
+
         # Add event notifications for different telemetry types
         print_status "Setting up event notifications..."
         kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "logs-raw" 2>/dev/null || print_warning "Failed to add logs-raw event notification"
         kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "metrics-raw" 2>/dev/null || print_warning "Failed to add metrics-raw event notification"
         kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "traces-raw" 2>/dev/null || print_warning "Failed to add traces-raw event notification"
         kubectl exec -n "$NAMESPACE" deployment/minio -- mc event add --event "put" minio/$S3_BUCKET arn:minio:sqs::create_object:webhook --prefix "otel-raw" 2>/dev/null || print_warning "Failed to add otel-raw event notification"
-        
-        print_success "MinIO webhooks configured successfully for LakeRunner event notifications"
+
+        print_success "MinIO webhooks configured successfully for Lakerunner event notifications"
     else
         print_status "Skipping MinIO webhook setup (using external S3 storage)"
     fi
@@ -1234,9 +1269,9 @@ install_otel_demo() {
             print_warning "The OTEL demo apps will fail if the bucket doesn't exist."
             read -p "Press Enter to continue..."
         fi
-        
+
         kubectl get namespace "otel-demo" >/dev/null 2>&1 || kubectl create namespace "otel-demo" >/dev/null 2>&1
-        
+
         # Add OpenTelemetry Helm repository
         helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 2>/dev/null || true
         helm repo update >/dev/null  2>&1
@@ -1252,7 +1287,7 @@ install_otel_demo() {
         echo "These apps will generate sample telemetry data that will be:"
         echo "1. Collected by the OpenTelemetry Collector"
         echo "2. Exported to MinIO S3 storage"
-        echo "3. Processed by LakeRunner"
+        echo "3. Processed by Lakerunner"
         echo "4. Available in Grafana dashboard"
         echo
         echo "To access the demo applications, run the following:"
@@ -1260,7 +1295,7 @@ install_otel_demo() {
         echo " kubectl port-forward svc/frontend-proxy 8080:8080 -n otel-demo "
         echo "Then visit http://localhost:8080"
         echo "The demo apps will continuously generate logs, metrics, and traces"
-        echo "that will flow through LakeRunner for processing and analysis."
+        echo "that will flow through Lakerunner for processing and analysis."
         echo
     else
         print_status "Skipping OpenTelemetry demo apps installation"
@@ -1269,12 +1304,12 @@ install_otel_demo() {
 
 main() {
     echo "=========================================="
-    echo "    LakeRunner Installation Script"
+    echo "    Lakerunner Installation Script"
     echo "=========================================="
     echo
 
     check_prerequisites
-    
+
     # Get all user preferences first
     get_namespace
     get_infrastructure_preferences
@@ -1293,20 +1328,20 @@ main() {
 
     # Ensure namespace exists before installing anything
     kubectl get namespace "$NAMESPACE" >/dev/null 2>&1 || kubectl create namespace "$NAMESPACE" >/dev/null 2>&1
-    
+
     install_minio
     install_postgresql
     install_kafka
-    
+
     generate_values_file
-    
+
     install_lakerunner
-    
+
     wait_for_services
-    
+
     setup_port_forwarding
 
-    # Setup MinIO webhooks for LakeRunner event notifications (required for LakeRunner to function)
+    # Setup MinIO webhooks for Lakerunner event notifications (required for Lakerunner to function)
     setup_minio_webhooks
 
     generate_otel_demo_values
@@ -1316,4 +1351,4 @@ main() {
     display_connection_info
 }
 
-main "$@" 
+main "$@"
