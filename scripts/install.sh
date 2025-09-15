@@ -254,15 +254,21 @@ get_telemetry_preferences() {
     echo "This helps improve the product and provides proactive monitoring."
     echo
 
-    get_input "Would you like to enable Cardinal telemetry collection? (y/N)" "N" "ENABLE_CARDINAL_TELEMETRY"
-
-    if [[ "$ENABLE_CARDINAL_TELEMETRY" =~ ^[Yy]$ ]]; then
+    if [ -n "$LAKERUNNER_CARDINAL_APIKEY" ]; then
         ENABLE_CARDINAL_TELEMETRY=true
-        print_status "Cardinal telemetry collection enabled"
-        get_cardinal_api_key
+        CARDINAL_API_KEY="$LAKERUNNER_CARDINAL_APIKEY"
+        print_status "Cardinal telemetry collection enabled (using LAKERUNNER_CARDINAL_APIKEY)"
     else
-        ENABLE_CARDINAL_TELEMETRY=false
-        print_status "Cardinal telemetry collection disabled"
+        get_input "Would you like to enable Cardinal telemetry collection? (y/N)" "N" "ENABLE_CARDINAL_TELEMETRY"
+
+        if [[ "$ENABLE_CARDINAL_TELEMETRY" =~ ^[Yy]$ ]]; then
+            ENABLE_CARDINAL_TELEMETRY=true
+            print_status "Cardinal telemetry collection enabled"
+            get_cardinal_api_key
+        else
+            ENABLE_CARDINAL_TELEMETRY=false
+            print_status "Cardinal telemetry collection disabled"
+        fi
     fi
 }
 
@@ -580,6 +586,9 @@ pubsub:
     $([ "$USE_SQS" = true ] && echo "queueURL: \"$SQS_QUEUE_URL\"" || echo "# queueURL: \"\"")
     $([ "$USE_SQS" = true ] && echo "region: \"$SQS_REGION\"" || echo "# region: \"\"")
 
+collector:
+  enabled: false
+
 # Reduce resource requirements for local development
 setup:
   enabled: true
@@ -753,6 +762,7 @@ EOF
 
     print_success "generated/values-local.yaml generated successfully"
 }
+
 
 # Function to install Lakerunner
 install_lakerunner() {
