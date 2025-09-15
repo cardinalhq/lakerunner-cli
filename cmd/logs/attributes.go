@@ -17,7 +17,6 @@ package logs
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -25,7 +24,6 @@ import (
 	"github.com/lakerunner/cli/internal/api"
 	"github.com/lakerunner/cli/internal/config"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 // Shared variables with get.go
@@ -71,9 +69,6 @@ func init() {
 
 func runAttributesCmd(cmdObj *cobra.Command, targets []string) error {
 	noColor, _ := cmdObj.Flags().GetBool("no-color")
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		noColor = true
-	}
 
 	endpoint, _ := cmdObj.Flags().GetString("endpoint")
 	apiKey, _ := cmdObj.Flags().GetString("api-key")
@@ -267,9 +262,6 @@ func runAttributesCmd(cmdObj *cobra.Command, targets []string) error {
 
 func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
 	noColor, _ := cmdObj.Flags().GetBool("no-color")
-	if !term.IsTerminal(int(os.Stdout.Fd())) {
-		noColor = true
-	}
 
 	endpoint, _ := cmdObj.Flags().GetString("endpoint")
 	apiKey, _ := cmdObj.Flags().GetString("api-key")
