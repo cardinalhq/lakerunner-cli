@@ -47,12 +47,15 @@ var MinioSetupCmd = &cobra.Command{
 			Secure: false,
 		})
 		if err != nil {
-			return fmt.Errorf("Failed to create MinIO client: %w", err)
+			return fmt.Errorf("failed to create MinIO client: %w", err)
 		}
 
-		adminClient, err := madmin.New(minioEndpoint, minioAccessKey, minioSecretKey, false)
+		adminClient, err := madmin.NewWithOptions(minioEndpoint, &madmin.Options{
+		Creds:  credentials.NewStaticV4(minioAccessKey, minioSecretKey, ""),
+		Secure: false,
+	})
 		if err != nil {
-			return fmt.Errorf("Failed to create MinIO admin client: %w", err)
+			return fmt.Errorf("failed to create MinIO admin client: %w", err)
 		}
 
 		log.Println("Creating bucket:", minioBucketName)
@@ -60,7 +63,7 @@ var MinioSetupCmd = &cobra.Command{
 		if err != nil {
 			exists, err := minioClient.BucketExists(context.Background(), minioBucketName)
 			if err != nil || !exists {
-				return fmt.Errorf("Failed to create bucket: %w", err)
+				return fmt.Errorf("failed to create bucket: %w", err)
 			}
 			log.Println("Bucket already exists")
 		}
@@ -69,11 +72,11 @@ var MinioSetupCmd = &cobra.Command{
 		webhookConfig := fmt.Sprintf("notify_webhook:test endpoint=\"%s\"", minioWebhookEndpoint)
 		err = adminClient.SetConfig(context.Background(), bytes.NewReader([]byte(webhookConfig)))
 		if err != nil {
-			return fmt.Errorf("Failed to set webhook config: %w", err)
+			return fmt.Errorf("failed to set webhook config: %w", err)
 		}
 
 		log.Println("Restarting MinIO service...")
-		err = adminClient.ServiceRestart(context.Background())
+		err = adminClient.ServiceRestartV2(context.Background())
 		if err != nil {
 			log.Printf("Warning: Failed to restart service (this might be expected in some setups): %v", err)
 		}
@@ -106,7 +109,7 @@ var MinioSetupCmd = &cobra.Command{
 
 		err = minioClient.SetBucketNotification(context.Background(), minioBucketName, config)
 		if err != nil {
-			return fmt.Errorf("Failed to set bucket notification: %w", err)
+			return fmt.Errorf("failed to set bucket notification: %w", err)
 		}
 
 		log.Println("MinIO setup completed successfully!")

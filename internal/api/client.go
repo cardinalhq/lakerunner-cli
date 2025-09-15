@@ -184,13 +184,13 @@ func (c *Client) streamResponses(ctx context.Context, httpReq *http.Request) (<-
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	responseChan := make(chan LogsResponse)
 	go func() {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		defer close(responseChan)
 
 		reader := bufio.NewReaderSize(resp.Body, 4096)

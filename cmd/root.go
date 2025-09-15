@@ -15,9 +15,14 @@
 package cmd
 
 import (
+	"fmt"
+	"os"
+	"runtime"
+
 	"github.com/lakerunner/cli/cmd/demo"
 	"github.com/lakerunner/cli/cmd/logs"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 
@@ -25,6 +30,18 @@ var rootCmd = &cobra.Command{
 	Use:   "lakerunner",
 	Short: "CLI tool to query Lakerunner",
 	Long:  `A CLI tool to interact with deployed lakerunner. It currently supports querying logs.`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// Automatically disable colors on Windows or when not in a terminal
+		noColor, _ := cmd.Flags().GetBool("no-color")
+		if !noColor {
+			if runtime.GOOS == "windows" || !term.IsTerminal(int(os.Stdout.Fd())) {
+				if err := cmd.Flags().Set("no-color", "true"); err != nil {
+					return fmt.Errorf("failed to set no-color flag: %w", err)
+				}
+			}
+		}
+		return nil
+	},
 }
 
 func Execute() error {

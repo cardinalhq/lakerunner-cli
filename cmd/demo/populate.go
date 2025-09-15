@@ -50,29 +50,33 @@ var PopulateCmd = &cobra.Command{
 			Secure: false,
 		})
 		if err != nil {
-			return fmt.Errorf("Failed to create MinIO client: %w", err)
+			return fmt.Errorf("failed to create MinIO client: %w", err)
 		}
 
 		// Download files from GitHub repo
 		log.Println("Downloading files from GitHub repo...")
 		tempDir, err := os.MkdirTemp("", "github-download")
 		if err != nil {
-			return fmt.Errorf("Failed to create temp directory: %w", err)
+			return fmt.Errorf("failed to create temp directory: %w", err)
 		}
-		defer os.RemoveAll(tempDir)
+		defer func() {
+			if err := os.RemoveAll(tempDir); err != nil {
+				log.Printf("Warning: Failed to remove temp directory %s: %v", tempDir, err)
+			}
+		}()
 
 		client := github.NewClient(nil)
 		// Recursively download the entire directory structure, skipping .git and hidden files
 		err = downloadDirectoryRecursivelyPopulate(client, populateRepoOwner, populateRepoName, populateRepoPath, tempDir)
 		if err != nil {
-			return fmt.Errorf("Failed to download repo contents: %w", err)
+			return fmt.Errorf("failed to download repo contents: %w", err)
 		}
 
 		// Upload files to MinIO recursively
 		log.Println("Uploading files to MinIO...")
 		err = uploadDirectoryToMinIOPopulate(minioClient, populateBucketName, tempDir, populateRepoPath)
 		if err != nil {
-			return fmt.Errorf("Failed to upload files: %w", err)
+			return fmt.Errorf("failed to upload files: %w", err)
 		}
 
 		log.Println("File population completed successfully!")
@@ -109,7 +113,11 @@ func uploadDirectoryToMinIOPopulate(client *minio.Client, bucketName, localPath,
 				log.Printf("Warning: Failed to open file %s: %v", localFilePath, err)
 				continue
 			}
-			defer file.Close()
+			defer func() {
+				if err := file.Close(); err != nil {
+					log.Printf("Warning: Failed to close file: %v", err)
+				}
+			}()
 			fileInfo, err := file.Stat()
 			if err != nil {
 				log.Printf("Warning: Failed to get file info for %s: %v", localFilePath, err)
@@ -156,14 +164,22 @@ func downloadDirectoryRecursivelyPopulate(client *github.Client, owner, repo, pa
 				log.Printf("Warning: Failed to download %s: %v", content.GetPath(), err)
 				continue
 			}
-			defer fileContent.Close()
+			defer func() {
+				if err := fileContent.Close(); err != nil {
+					log.Printf("Warning: Failed to close file content: %v", err)
+				}
+			}()
 			localPath := filepath.Join(localBase, name)
 			file, err := os.Create(localPath)
 			if err != nil {
 				log.Printf("Warning: Failed to create file %s: %v", localPath, err)
 				continue
 			}
-			defer file.Close()
+			defer func() {
+				if err := file.Close(); err != nil {
+					log.Printf("Warning: Failed to close file: %v", err)
+				}
+			}()
 			_, err = io.Copy(file, fileContent)
 			if err != nil {
 				log.Printf("Warning: Failed to write file %s: %v", localPath, err)
