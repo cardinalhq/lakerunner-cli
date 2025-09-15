@@ -65,8 +65,6 @@ type Filter struct {
 
 // MarshalJSON implements custom JSON marshaling for Filter
 func (f *Filter) MarshalJSON() ([]byte, error) {
-	type Alias Filter // Avoid recursive marshaling
-
 	// Create a map to hold all fields
 	result := make(map[string]interface{})
 
@@ -197,14 +195,14 @@ func (c *Client) QueryGraph(ctx context.Context, req *GraphRequest, params Query
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	responseChan := make(chan LogsResponse)
 
 	go func() {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		defer close(responseChan)
 
 		reader := bufio.NewReaderSize(resp.Body, 4096) // Larger buffer for efficiency
@@ -273,14 +271,14 @@ func (c *Client) QueryTags(ctx context.Context, req *Expression, params QueryPar
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	responseChan := make(chan LogsResponse)
 
 	go func() {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		defer close(responseChan)
 
 		reader := bufio.NewReaderSize(resp.Body, 4096) // Larger buffer for efficiency
