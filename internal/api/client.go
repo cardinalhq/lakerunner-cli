@@ -98,12 +98,6 @@ func (f *Filter) MarshalJSON() ([]byte, error) {
 	return json.Marshal(result)
 }
 
-// LogsResponse represents a response from the logs endpoint
-type LogsResponse struct {
-	ID      string                 `json:"id"`
-	Type    string                 `json:"type"`
-	Message map[string]interface{} `json:"message"`
-}
 
 // QueryParams represents URL query parameters
 type QueryParams struct {
