@@ -795,7 +795,7 @@ wait_for_services() {
 display_connection_info() {
     print_success "Lakerunner installation completed successfully!"
     echo
-    echo "=== Connection Information ==="
+    echo "=== Installation Summary ==="
     echo
 
     echo "Telemetry Configuration:"
@@ -815,140 +815,112 @@ display_connection_info() {
         echo "  Traces: Disabled"
     fi
 
+    echo
+    echo "Infrastructure:"
+    if [ "$INSTALL_POSTGRES" = true ]; then
+        echo "  PostgreSQL: Installed"
+    fi
+
+    if [ "$INSTALL_MINIO" = true ]; then
+        echo "  Storage: MinIO Installed"
+    else
+        echo "  Storage: External S3 ($S3_BUCKET)"
+    fi
+
+    if [ "$INSTALL_KAFKA" = true ]; then
+        echo "  Kafka: Installed"
+    fi
+
     if [ "$ENABLE_CARDINAL_TELEMETRY" = true ]; then
         echo "  Cardinal Telemetry: Enabled"
-        echo "  Cardinal Dashboard: https://app.cardinalhq.io"
+        # Check if we're in test mode based on the environment variable
+        if [ -n "$LAKERUNNER_CARDINAL_ENV" ] && [ "$LAKERUNNER_CARDINAL_ENV" = "test" ]; then
+            echo "  Cardinal Dashboard: https://app.test.cardinalhq.io"
+        else
+            echo "  Cardinal Dashboard: https://app.cardinalhq.io"
+        fi
     else
         echo "  Cardinal Telemetry: Disabled"
     fi
     echo
 
-    # Get MinIO credentials
-    MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
-    MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+    # Demo App Information (only if installed)
+    if [ "$INSTALL_OTEL_DEMO" = true ]; then
+        echo "=== Demo Applications ==="
+        echo "OpenTelemetry demo applications have been installed in the 'otel-demo' namespace."
+        echo "These apps generate sample telemetry data for testing Lakerunner functionality."
+        echo
+        echo "To access the demo applications:"
+        echo "  kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=frontend-proxy -n otel-demo --timeout=300s"
+        echo "  kubectl port-forward svc/frontend-proxy 8080:8080 -n otel-demo"
+        echo "  Then visit: http://localhost:8080"
+        echo
+    fi
 
+    # MinIO Console Access (only if MinIO was installed)
     if [ "$INSTALL_MINIO" = true ]; then
-        echo "MinIO Console:"
-        echo "  To access: kubectl port-forward svc/minio-console 9001:9001 -n $NAMESPACE"
+        # Get MinIO credentials
+        MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+
+        echo "=== MinIO Console Access ==="
+        echo "To access MinIO Console:"
+        echo "  kubectl port-forward svc/minio-console 9001:9001 -n $NAMESPACE"
         echo "  Then visit: http://localhost:9001"
         echo "  Access Key: $MINIO_ACCESS_KEY"
         echo "  Secret Key: $MINIO_SECRET_KEY"
         echo
-    else
-        echo "S3 Storage:"
-        echo "  Bucket: $S3_BUCKET"
-        echo "  Region: $S3_REGION"
-        echo
     fi
 
-    if [ "$INSTALL_POSTGRES" = true ]; then
-        echo "PostgreSQL:"
-        echo "  Host: postgres-postgresql.$NAMESPACE.svc.cluster.local"
-        echo "  Port: 5432"
-        echo "  Database: lakerunner"
-        echo "  Username: lakerunner"
-        echo "  Password: lakerunnerpass"
-        echo
-    else
-        echo "PostgreSQL:"
-        echo "  Host: $POSTGRES_HOST"
-        echo "  Port: $POSTGRES_PORT"
-        echo "  Database: $POSTGRES_DB"
-        echo "  Username: $POSTGRES_USER"
-        echo
-    fi
-
-    if [ "$INSTALL_KAFKA" = true ]; then
-        echo "Kafka:"
-        echo "  Bootstrap Servers: kafka.$NAMESPACE.svc.cluster.local:9092"
-        echo "  Protocol: PLAINTEXT (no authentication)"
-        echo
-    else
-        echo "Kafka:"
-        echo "  Bootstrap Servers: $KAFKA_BOOTSTRAP_SERVERS"
-        if [ -n "$KAFKA_USERNAME" ]; then
-            echo "  Username: $KAFKA_USERNAME"
-        fi
-        echo
-    fi
-
-    if [ "$USE_SQS" = true ]; then
-        echo "Lakerunner PubSub SQS Configuration:"
-        echo "  Queue URL: $SQS_QUEUE_URL"
-        echo "  Region: $SQS_REGION"
-        echo
-    else
-            echo "Lakerunner PubSub HTTP Endpoint:"
-    echo "  URL: http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/"
+    # CLI Access
+    echo "=== Lakerunner CLI Access ==="
+    echo "To use lakerunner-cli:"
+    echo "  kubectl port-forward svc/lakerunner-query-api-v2 8080:8080 -n $NAMESPACE"
+    echo "  Download CLI from: https://github.com/cardinalhq/lakerunner-cli/releases"
+    echo "  Then run: lakerunner-cli --endpoint http://localhost:8080 --api-key $API_KEY"
     echo
 
-    echo "Grafana Dashboard:"
-    echo "  To access: kubectl port-forward svc/lakerunner-grafana 3000:3000 -n $NAMESPACE"
+    # Grafana Access
+    echo "=== Grafana Dashboard Access ==="
+    echo "To access Grafana:"
+    echo "  kubectl port-forward svc/lakerunner-grafana 3000:3000 -n $NAMESPACE"
     echo "  Then visit: http://localhost:3000"
     echo "  Username: admin"
     echo "  Password: admin"
     echo "  Datasource: Cardinal (pre-configured)"
     echo
 
-    echo "Lakerunner CLI Access:"
-    echo "  To use lakerunner-cli: kubectl port-forward svc/lakerunner-query-api-v2 8080:8080 -n $NAMESPACE"
-    echo "  Download from: https://github.com/cardinalhq/lakerunner-cli/releases"
-    echo "  Then run: lakerunner-cli --endpoint http://localhost:8080 --api-key $API_KEY"
-    echo
+    # Only show PubSub HTTP endpoint if MinIO was NOT installed and not using SQS
+    if [ "$INSTALL_MINIO" = false ] && [ "$USE_SQS" = false ]; then
+        echo "=== Event Notification Configuration ==="
+        echo "Lakerunner PubSub HTTP Endpoint:"
+        echo "  URL: http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/"
+        echo
     fi
 
     echo "=== Next Steps ==="
-    if [ "$INSTALL_MINIO" = true ]; then
-        echo "1. To access MinIO Console:"
-        echo "   kubectl port-forward svc/minio-console 9001:9001 -n $NAMESPACE"
-        echo "   Then visit http://localhost:9001"
-        echo "2. Create a bucket named 'lakerunner' (if not already created by the setup)"
-    else
+
+    # Only show MinIO-specific instructions if MinIO was NOT installed
+    if [ "$INSTALL_MINIO" = false ]; then
         echo "1. Ensure your S3 bucket '$S3_BUCKET' exists and is accessible"
+
+        if [ "$USE_SQS" = true ]; then
+            echo "2. Configure S3 bucket notifications to send events to your SQS queue:"
+            echo "   - Queue ARN: arn:aws:sqs:$SQS_REGION:$(echo $SQS_QUEUE_URL | cut -d'/' -f4):$(echo $SQS_QUEUE_URL | cut -d'/' -f5)"
+            echo "   - Event types: s3:ObjectCreated:*"
+            echo "3. Configure SQS queue policy to allow S3 to send messages"
+            echo "4. Ensure IAM permissions for Lakerunner to read from SQS"
+        else
+            echo "2. Configure event notifications in your S3-compatible storage:"
+            echo "   - Add event notification pointing to:"
+            echo "     http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/"
+            echo "3. The event notification ARN should appear in the bucket configuration"
+        fi
     fi
 
-    if [ "$USE_SQS" = true ]; then
-        echo "2. Configure S3 bucket notifications to send events to your SQS queue:"
-        echo "   - Queue ARN: arn:aws:sqs:$SQS_REGION:$(echo $SQS_QUEUE_URL | cut -d'/' -f4):$(echo $SQS_QUEUE_URL | cut -d'/' -f5)"
-        echo "   - Event types: s3:ObjectCreated:*"
-        echo "3. Configure SQS queue policy to allow S3 to send messages"
-        echo "4. Ensure IAM permissions for Lakerunner to read from SQS"
-    else
-        echo "2. Configure event notifications in your S3-compatible storage:"
-        echo "   - Add event notification pointing to:"
-        echo "     http://lakerunner-pubsub-http.$NAMESPACE.svc.cluster.local:8080/"
-        echo "3. The event notification ARN should appear in the bucket configuration"
-    fi
     echo
-
-    if [ "$ENABLE_CARDINAL_TELEMETRY" = true ]; then
-        echo "4. Cardinal Telemetry is enabled and sending data to Cardinal"
-        echo "   You can view your telemetry data at: https://app.cardinalhq.io"
-    else
-        echo "4. Cardinal Telemetry is disabled"
-        echo "   To enable later, update values-local.yaml and upgrade the release"
-    fi
+    echo "For further information, visit: https://github.com/cardinalhq/lakerunner"
     echo
-    echo "For detailed setup instructions, visit: https://github.com/cardinalhq/lakerunner"
-
-    if [ "$INSTALL_OTEL_DEMO" = true ]; then
-        echo
-        echo "=== OpenTelemetry Demo Apps ==="
-        echo "Demo applications have been installed in the 'otel-demo' namespace."
-        echo "These apps will generate sample telemetry data that will be:"
-        echo "1. Collected by the OpenTelemetry Collector"
-        echo "2. Exported to MinIO S3 storage"
-        echo "3. Processed by Lakerunner"
-        echo "4. Available in Grafana dashboard"
-        echo
-        echo "To access the demo applications:"
-        echo "  kubectl port-forward svc/otel-demo-frontend 8080:8080 -n otel-demo"
-        echo "  Then visit: http://localhost:8080"
-        echo
-        echo "The demo apps will continuously generate logs, metrics, and traces"
-        echo "that will flow through Lakerunner for processing and analysis."
-        echo
-    fi
 
 }
 
@@ -1284,7 +1256,196 @@ install_otel_demo() {
     fi
 }
 
+# Parse command line arguments
+parse_args() {
+    SIGNALS_FLAG=""
+    STANDALONE_FLAG=false
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --signals)
+                SIGNALS_FLAG="$2"
+                shift 2
+                ;;
+            --standalone)
+                STANDALONE_FLAG=true
+                shift
+                ;;
+            --help|-h)
+                show_help
+                exit 0
+                ;;
+            *)
+                echo "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+}
+
+show_help() {
+    echo "Lakerunner Installation Script"
+    echo
+    echo "Usage: $0 [OPTIONS]"
+    echo
+    echo "Options:"
+    echo "  --signals SIGNALS    Specify which telemetry signals to enable"
+    echo "                       Options: all, logs, metrics, traces"
+    echo "                       Multiple signals can be comma-separated"
+    echo "                       Examples: --signals all"
+    echo "                                --signals metrics"
+    echo "                                --signals logs,metrics,traces"
+    echo "  --standalone         Install in standalone mode with minimal interaction"
+    echo "                       Automatically enables logs and metrics, installs all"
+    echo "                       local infrastructure (PostgreSQL, MinIO, Kafka)"
+    echo "                       Uses default namespace 'lakerunner' and default credentials"
+    echo "  --help, -h          Show this help message"
+    echo
+}
+
+# Parse signals from the --signals flag
+parse_signals() {
+    if [ -n "$SIGNALS_FLAG" ]; then
+        # Convert to lowercase and remove spaces
+        signals=$(echo "$SIGNALS_FLAG" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+
+        # Initialize all signals to false
+        ENABLE_LOGS=false
+        ENABLE_METRICS=false
+        ENABLE_TRACES=false
+
+        if [ "$signals" = "all" ]; then
+            ENABLE_LOGS=true
+            ENABLE_METRICS=true
+            ENABLE_TRACES=true
+            print_status "Signals: Enabling all telemetry types (logs, metrics, traces)"
+        else
+            # Split by comma and process each signal
+            IFS=',' read -ra SIGNAL_ARRAY <<< "$signals"
+            enabled_signals=()
+
+            for signal in "${SIGNAL_ARRAY[@]}"; do
+                case "$signal" in
+                    logs)
+                        ENABLE_LOGS=true
+                        enabled_signals+=("logs")
+                        ;;
+                    metrics)
+                        ENABLE_METRICS=true
+                        enabled_signals+=("metrics")
+                        ;;
+                    traces)
+                        ENABLE_TRACES=true
+                        enabled_signals+=("traces")
+                        ;;
+                    *)
+                        print_error "Invalid signal: $signal"
+                        echo "Valid signals are: logs, metrics, traces, all"
+                        exit 1
+                        ;;
+                esac
+            done
+
+            if [ ${#enabled_signals[@]} -eq 0 ]; then
+                print_error "No valid signals specified"
+                exit 1
+            fi
+
+            print_status "Signals: Enabling $(IFS=', '; echo "${enabled_signals[*]}")"
+        fi
+
+        return 0  # Signals were specified via flag
+    else
+        return 1  # No signals flag, should ask user
+    fi
+}
+
+# Configure all settings for standalone mode
+configure_standalone() {
+    print_status "Configuring standalone installation..."
+
+    # Namespace
+    NAMESPACE="lakerunner"
+
+    # Infrastructure - install everything locally
+    INSTALL_POSTGRES=true
+    INSTALL_MINIO=true
+    INSTALL_KAFKA=true
+
+    # Telemetry - use --signals flag if provided, otherwise default to logs and metrics
+    if [ -n "$SIGNALS_FLAG" ]; then
+        # --signals flag was provided, use parse_signals() to set telemetry
+        parse_signals
+        print_status "Using signals from --signals flag"
+    else
+        # No --signals flag, use standalone defaults: logs and metrics enabled, traces disabled
+        ENABLE_LOGS=true
+        ENABLE_METRICS=true
+        ENABLE_TRACES=false
+        print_status "Using standalone default signals: logs and metrics"
+    fi
+
+    # Event notifications - use HTTP webhook (not SQS)
+    USE_SQS=false
+
+    # Credentials - use defaults
+    ORG_ID="151f346b-967e-4c94-b97a-581898b5b457"
+    API_KEY="test-key"
+
+    # Cardinal telemetry - check environment variable or ask user
+    if [ -n "$LAKERUNNER_CARDINAL_APIKEY" ]; then
+        ENABLE_CARDINAL_TELEMETRY=true
+        CARDINAL_API_KEY="$LAKERUNNER_CARDINAL_APIKEY"
+        print_status "Cardinal telemetry enabled (using LAKERUNNER_CARDINAL_APIKEY)"
+    else
+        # Ask user about Cardinal telemetry even in standalone mode
+        echo
+        echo "=== Cardinal Telemetry Collection ==="
+        echo "Lakerunner can send <0.1% of telemetry data to Cardinal for automatic intelligent alerts."
+        echo "This helps improve the product and provides proactive monitoring."
+        echo
+
+        get_input "Would you like to enable Cardinal telemetry collection? (y/N)" "N" "ENABLE_CARDINAL_TELEMETRY"
+
+        if [[ "$ENABLE_CARDINAL_TELEMETRY" =~ ^[Yy]$ ]]; then
+            ENABLE_CARDINAL_TELEMETRY=true
+            print_status "Cardinal telemetry collection enabled"
+            get_cardinal_api_key
+        else
+            ENABLE_CARDINAL_TELEMETRY=false
+            print_status "Cardinal telemetry collection disabled"
+        fi
+    fi
+
+    # Demo apps - install by default in standalone mode
+    INSTALL_OTEL_DEMO=true
+
+    print_status "Standalone mode configured:"
+    print_status "  Namespace: $NAMESPACE"
+    print_status "  Infrastructure: PostgreSQL, MinIO, Kafka (all local)"
+
+    # Build telemetry status message
+    telemetry_status=""
+    [ "$ENABLE_LOGS" = true ] && telemetry_status="${telemetry_status}Logs "
+    [ "$ENABLE_METRICS" = true ] && telemetry_status="${telemetry_status}Metrics "
+    [ "$ENABLE_TRACES" = true ] && telemetry_status="${telemetry_status}Traces "
+
+    if [ -z "$telemetry_status" ]; then
+        telemetry_status="None enabled"
+    else
+        telemetry_status="${telemetry_status%% }enabled"  # Remove trailing space and add "enabled"
+    fi
+
+    print_status "  Telemetry: $telemetry_status"
+    print_status "  Demo apps: Enabled"
+    print_status "  Cardinal telemetry: $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "Enabled" || echo "Disabled")"
+}
+
 main() {
+    # Parse command line arguments
+    parse_args "$@"
+
     echo "=========================================="
     echo "    Lakerunner Installation Script"
     echo "=========================================="
@@ -1292,12 +1453,24 @@ main() {
 
     check_prerequisites
 
-    # Get all user preferences first
-    get_namespace
-    get_infrastructure_preferences
-    get_telemetry_preferences
-    get_lakerunner_credentials
-    ask_install_otel_demo
+    # Handle configuration based on flags
+    if [ "$STANDALONE_FLAG" = true ]; then
+        # Standalone mode - configure everything automatically
+        configure_standalone
+    else
+        # Interactive mode - get all user preferences
+        get_namespace
+        get_infrastructure_preferences
+
+        # Handle telemetry preferences
+        if ! parse_signals; then
+            # No --signals flag provided, ask user
+            get_telemetry_preferences
+        fi
+
+        get_lakerunner_credentials
+        ask_install_otel_demo
+    fi
 
     # Display configuration summary
     display_configuration_summary
