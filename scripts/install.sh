@@ -791,44 +791,6 @@ wait_for_services() {
     print_success "All services are ready in namespace: $NAMESPACE"
 }
 
-setup_port_forwarding() {
-    print_status "Setting up port forwarding for Lakerunner services..."
-
-    # Kill any existing port forwarding processes
-    if command -v pkill >/dev/null 2>&1; then
-        pkill -f "kubectl port-forward.*minio.*9001" 2>/dev/null || true
-        pkill -f "kubectl port-forward.*lakerunner-query-api-v2.*8080" 2>/dev/null || true
-        pkill -f "kubectl port-forward.*lakerunner-grafana.*3000" 2>/dev/null || true
-    else
-        # Fallback for systems without pkill (like macOS)
-        ps aux | grep "kubectl port-forward.*minio.*9001" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
-        ps aux | grep "kubectl port-forward.*lakerunner-query-api-v2.*8080" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
-        ps aux | grep "kubectl port-forward.*lakerunner-grafana.*3000" | grep -v grep | awk '{print $2}' | xargs kill 2>/dev/null || true
-    fi
-    sleep 1
-
-    # Setup MinIO port forwarding if using local MinIO
-    if [ "$INSTALL_MINIO" = true ]; then
-        print_status "Setting up port forwarding for MinIO Console..."
-
-        # Start port forwarding in background
-        print_status "Starting MinIO port forwarding..."
-        kubectl -n "$NAMESPACE" port-forward svc/minio 9000:9000 > /dev/null 2>&1 &
-        sleep 2
-        kubectl -n "$NAMESPACE" port-forward svc/minio-console 9001:9001 > /dev/null 2>&1 &
-
-    else
-        print_status "Skipping MinIO port forwarding (using external S3 storage)"
-    fi
-
-    print_status "Starting Lakerunner Query API port forwarding..."
-    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-query-api-v2 8080:8080 > /dev/null 2>&1 &
-    sleep 2
-
-    # Start Grafana port forwarding
-    print_status "Starting Grafana port forwarding..."
-    kubectl -n "$NAMESPACE" port-forward svc/lakerunner-grafana 3000:3000 > /dev/null 2>&1 &
-}
 
 display_connection_info() {
     print_success "Lakerunner installation completed successfully!"
@@ -867,7 +829,8 @@ display_connection_info() {
 
     if [ "$INSTALL_MINIO" = true ]; then
         echo "MinIO Console:"
-        echo "  URL: http://localhost:9001"
+        echo "  To access: kubectl port-forward svc/minio-console 9001:9001 -n $NAMESPACE"
+        echo "  Then visit: http://localhost:9001"
         echo "  Access Key: $MINIO_ACCESS_KEY"
         echo "  Secret Key: $MINIO_SECRET_KEY"
         echo
@@ -920,17 +883,26 @@ display_connection_info() {
     echo
 
     echo "Grafana Dashboard:"
-    echo "  URL: http://localhost:3000"
+    echo "  To access: kubectl port-forward svc/lakerunner-grafana 3000:3000 -n $NAMESPACE"
+    echo "  Then visit: http://localhost:3000"
     echo "  Username: admin"
     echo "  Password: admin"
     echo "  Datasource: Cardinal (pre-configured)"
+    echo
+
+    echo "Lakerunner CLI Access:"
+    echo "  To use lakerunner-cli: kubectl port-forward svc/lakerunner-query-api-v2 8080:8080 -n $NAMESPACE"
+    echo "  Download from: https://github.com/cardinalhq/lakerunner-cli/releases"
+    echo "  Then run: lakerunner-cli --endpoint http://localhost:8080 --api-key $API_KEY"
     echo
     fi
 
     echo "=== Next Steps ==="
     if [ "$INSTALL_MINIO" = true ]; then
-        echo "1. Access MinIO Console at http://localhost:9001"
-        echo "2. Create a bucket named 'lakerunner'"
+        echo "1. To access MinIO Console:"
+        echo "   kubectl port-forward svc/minio-console 9001:9001 -n $NAMESPACE"
+        echo "   Then visit http://localhost:9001"
+        echo "2. Create a bucket named 'lakerunner' (if not already created by the setup)"
     else
         echo "1. Ensure your S3 bucket '$S3_BUCKET' exists and is accessible"
     fi
@@ -1348,8 +1320,6 @@ main() {
     install_lakerunner
 
     wait_for_services
-
-    setup_port_forwarding
 
     # Setup MinIO webhooks for Lakerunner event notifications (required for Lakerunner to function)
     setup_minio_webhooks
