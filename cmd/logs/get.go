@@ -282,10 +282,16 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 			// Extract key log information
 			message := response.Message
 
-			// Get timestamp
+			// Get timestamp with proper precision handling
 			timestamp := ""
-			if ts, ok := message["timestamp"].(float64); ok {
-				timestamp = time.Unix(int64(ts)/1000, 0).Format("2006-01-02 15:04:05")
+
+			// Check for nanosecond precision first (now preserved as int64)
+			if tsns, ok := message["tsns"].(int64); ok {
+				// tsns is in nanoseconds
+				timestamp = time.Unix(0, tsns).Format("2006-01-02 15:04:05.999999999")
+			} else if ts, ok := message["timestamp"].(int64); ok {
+				// timestamp is in milliseconds as int64
+				timestamp = time.UnixMilli(ts).Format("2006-01-02 15:04:05.000")
 			}
 
 			// Get log message
