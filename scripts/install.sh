@@ -20,7 +20,7 @@
 set -e
 
 # Helm Chart Versions
-LAKERUNNER_VERSION="0.9.1-rc1"
+LAKERUNNER_VERSION="0.9.1-rc2"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
