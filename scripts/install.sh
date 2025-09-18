@@ -57,6 +57,66 @@ output_redirect() {
     fi
 }
 
+# Progress indicator function
+show_progress() {
+    local message="$1"
+    local command="$2"
+    local timeout="${3:-300}"  # Default 5 minutes
+
+    if [ "$VERBOSE" = true ]; then
+        # In verbose mode, just run the command normally
+        print_status "$message..."
+        eval "$command"
+        local exit_code=$?
+        if [ $exit_code -eq 0 ]; then
+            print_success "$message completed"
+        else
+            print_error "$message failed"
+        fi
+        return $exit_code
+    fi
+
+    # Start the command in background, redirecting all output
+    eval "$command" >/dev/null 2>&1 &
+    local cmd_pid=$!
+
+    # Show spinner while command runs
+    local spinner_chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    local spinner_len=${#spinner_chars}
+    local i=0
+    local elapsed=0
+
+    while kill -0 $cmd_pid 2>/dev/null; do
+        local char=${spinner_chars:$((i % spinner_len)):1}
+        printf "\r${BLUE}[INFO]${NC} %s %s (%ds)" "$message" "$char" "$elapsed"
+        sleep 1
+        i=$((i + 1))
+        elapsed=$((elapsed + 1))
+
+        # Check timeout
+        if [ $elapsed -ge $timeout ]; then
+            kill $cmd_pid 2>/dev/null
+            printf "\r${RED}[ERROR]${NC} %s - timed out after %ds\n" "$message" "$timeout"
+            return 1
+        fi
+    done
+
+    # Wait for command to finish and get exit code
+    wait $cmd_pid
+    local exit_code=$?
+
+    # Clear the progress line and show final status
+    printf "\r\033[K"
+
+    if [ $exit_code -eq 0 ]; then
+        print_success "$message completed"
+    else
+        print_error "$message failed"
+    fi
+
+    return $exit_code
+}
+
 check_prerequisites() {
     print_status "Checking prerequisites..."
 
@@ -422,10 +482,10 @@ install_minio() {
             --set service.ports[0].targetPort=9000 \
             --set service.ports[1].name=console \
             --set service.ports[1].port=9001 \
-            --set service.ports[1].targetPort=9001 | output_redirect
+            --set service.ports[1].targetPort=9001 \
+            --set deploymentUpdate.type=Recreate | output_redirect
 
-        print_status "Waiting for MinIO to be ready..."
-        kubectl wait --for=condition=ready pod -l app=minio -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
+        show_progress "Waiting for MinIO to be ready" "kubectl wait --for=condition=ready pod -l app=minio -n '$NAMESPACE' --timeout=300s"
 
         print_success "MinIO installed successfully"
     else
@@ -458,8 +518,7 @@ install_postgresql() {
             --set global.security.allowInsecureImages=true \
             --set persistence.size=8Gi | output_redirect
 
-        print_status "Waiting for PostgreSQL to be ready..."
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=postgresql -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
+        show_progress "Waiting for PostgreSQL to be ready" "kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=postgresql -n '$NAMESPACE' --timeout=300s"
 
         print_success "PostgreSQL installed successfully"
     else
@@ -523,8 +582,7 @@ EOF
         # Clean up temporary file
         rm -f /tmp/kafka-values.yaml
 
-        print_status "Waiting for Kafka to be ready..."
-        kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kafka -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
+        show_progress "Waiting for Kafka to be ready" "kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=kafka -n '$NAMESPACE' --timeout=300s"
 
         print_success "Kafka installed successfully"
     else
@@ -667,7 +725,15 @@ pubsub:
     $([ "$USE_SQS" = true ] && echo "region: \"$SQS_REGION\"" || echo "# region: \"\"")
 
 collector:
-  enabled: false
+  enabled: $([ "$ENABLE_CARDINAL_TELEMETRY" = true ] && echo "true" || echo "false")
+  replicas: 2
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 2Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
 
 # Reduce resource requirements for local development
 setup:
@@ -771,6 +837,58 @@ rollupMetrics:
   autoscaling:
     enabled: false
 
+boxerRollupMetrics:
+  enabled: $([ "$ENABLE_METRICS" = true ] && echo "true" || echo "false")
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 500Mi
+    limits:
+      cpu: 1000m
+      memory: 500Mi
+  autoscaling:
+    enabled: false
+
+boxerCompactMetrics:
+  enabled: $([ "$ENABLE_METRICS" = true ] && echo "true" || echo "false")
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 200Mi
+    limits:
+      cpu: 1000m
+      memory: 400Mi
+  autoscaling:
+    enabled: false
+
+boxerCompactLogs:
+  enabled: $([ "$ENABLE_LOGS" = true ] && echo "true" || echo "false")
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 200Mi
+    limits:
+      cpu: 1000m
+      memory: 400Mi
+  autoscaling:
+    enabled: false
+
+boxerCompactTraces:
+  enabled: $([ "$ENABLE_TRACES" = true ] && echo "true" || echo "false")
+  replicas: 1
+  resources:
+    requests:
+      cpu: 500m
+      memory: 200Mi
+    limits:
+      cpu: 1000m
+      memory: 400Mi
+  autoscaling:
+    enabled: false
+
 sweeper:
   enabled: true
   replicas: 1
@@ -860,14 +978,12 @@ wait_for_services() {
     print_status "Waiting for Lakerunner services to be ready in namespace: $NAMESPACE"
     # Check if setup job exists and wait for it to complete
     if kubectl get job lakerunner-setup -n "$NAMESPACE" >/dev/null 2>&1; then
-        print_status "Waiting for setup job to complete..."
-        kubectl wait --for=condition=complete job/lakerunner-setup -n "$NAMESPACE" --timeout=600s
+        show_progress "Waiting for setup job to complete" "kubectl wait --for=condition=complete job/lakerunner-setup -n '$NAMESPACE' --timeout=600s" 600
     else
         print_status "Setup job not found (may have already completed or not needed for upgrade)"
     fi
-    print_status "Waiting for query-api service..."
-    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=query-api-v2 -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1 || true
-    kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=grafana -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1 || true
+    show_progress "Waiting for query-api service" "kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=query-api-v2 -n '$NAMESPACE' --timeout=300s" || true
+    show_progress "Waiting for Grafana service" "kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=grafana -n '$NAMESPACE' --timeout=300s" || true
     print_success "All services are ready in namespace: $NAMESPACE"
 }
 
@@ -1260,8 +1376,7 @@ setup_minio_webhooks() {
         print_status "Restarting MinIO to apply configuration..."
         kubectl rollout restart deployment/minio -n "$NAMESPACE" >/dev/null 2>&1
 
-        print_status "Waiting for MinIO to restart..."
-        kubectl rollout status deployment/minio -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
+        show_progress "Waiting for MinIO to restart" "kubectl rollout status deployment/minio -n '$NAMESPACE' --timeout=300s"
 
         # Wait a bit more for MinIO to be fully ready
         sleep 5
