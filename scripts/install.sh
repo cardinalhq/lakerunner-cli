@@ -48,6 +48,15 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+# Helper function to conditionally redirect output based on verbose flag
+output_redirect() {
+    if [ "$VERBOSE" = true ]; then
+        cat  # Show output when verbose
+    else
+        cat >/dev/null 2>&1  # Hide output when not verbose
+    fi
+}
+
 check_prerequisites() {
     print_status "Checking prerequisites..."
 
@@ -88,6 +97,69 @@ check_prerequisites() {
     fi
 
     print_success "All prerequisites are satisfied"
+}
+
+check_helm_repositories() {
+    if [ "$SKIP_HELM_REPO_UPDATES" != true ]; then
+        return 0  # Skip this check if we're going to add/update repos anyway
+    fi
+
+    print_status "Pre-flight check: Verifying required helm repositories..."
+
+    local missing_repos=()
+    local found_repos=()
+    local needed_repos=()
+
+    # Determine which repositories we need based on configuration
+    if [ "$INSTALL_MINIO" = true ]; then
+        needed_repos+=("minio https://charts.min.io/")
+    fi
+
+    if [ "$INSTALL_POSTGRES" = true ] || [ "$INSTALL_KAFKA" = true ]; then
+        needed_repos+=("bitnami https://charts.bitnami.com/bitnami")
+    fi
+
+    if [ "$INSTALL_OTEL_DEMO" = true ]; then
+        needed_repos+=("open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts")
+    fi
+
+    # If no repositories are needed, skip the check
+    if [ ${#needed_repos[@]} -eq 0 ]; then
+        print_status "No helm repositories required for current configuration"
+        return 0
+    fi
+
+    # Check each needed repository
+    for repo_info in "${needed_repos[@]}"; do
+        repo_name=$(echo "$repo_info" | cut -d' ' -f1)
+        repo_url=$(echo "$repo_info" | cut -d' ' -f2)
+
+        if helm repo list 2>/dev/null | grep -q "$repo_name.*$repo_url"; then
+            found_repos+=("$repo_name")
+        else
+            missing_repos+=("$repo_info")
+        fi
+    done
+
+    # Report found repositories
+    if [ ${#found_repos[@]} -gt 0 ]; then
+        print_success "Found required helm repositories: ${found_repos[*]}"
+    fi
+
+    # Report missing repositories and fail if any are missing
+    if [ ${#missing_repos[@]} -gt 0 ]; then
+        print_error "Missing required helm repositories when --skip-helm-repo-updates is enabled:"
+        for repo in "${missing_repos[@]}"; do
+            repo_name=$(echo "$repo" | cut -d' ' -f1)
+            repo_url=$(echo "$repo" | cut -d' ' -f2)
+            echo "  helm repo add $repo_name $repo_url"
+        done
+        echo
+        print_error "Please add the missing repositories and try again, or run without --skip-helm-repo-updates"
+        exit 1
+    fi
+
+    print_success "All required helm repositories are available"
 }
 
 get_input() {
@@ -330,8 +402,10 @@ install_minio() {
             return
         fi
 
-        helm repo add minio https://charts.min.io/ >/dev/null 2>&1 || true
-        helm repo update >/dev/null  2>&1
+        if [ "$SKIP_HELM_REPO_UPDATES" != true ]; then
+            helm repo add minio https://charts.min.io/ >/dev/null 2>&1 || true
+            helm repo update >/dev/null  2>&1
+        fi
 
         helm install minio minio/minio \
             --namespace "$NAMESPACE" \
@@ -348,7 +422,7 @@ install_minio() {
             --set service.ports[0].targetPort=9000 \
             --set service.ports[1].name=console \
             --set service.ports[1].port=9001 \
-            --set service.ports[1].targetPort=9001 >/dev/null  2>&1
+            --set service.ports[1].targetPort=9001 | output_redirect
 
         print_status "Waiting for MinIO to be ready..."
         kubectl wait --for=condition=ready pod -l app=minio -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
@@ -368,8 +442,10 @@ install_postgresql() {
             return
         fi
 
-        helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
-        helm repo update >/dev/null  2>&1
+        if [ "$SKIP_HELM_REPO_UPDATES" != true ]; then
+            helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
+            helm repo update >/dev/null  2>&1
+        fi
 
         helm install postgres bitnami/postgresql \
             --namespace "$NAMESPACE" \
@@ -378,7 +454,9 @@ install_postgresql() {
             --set auth.database=lakerunner \
             --set-string primary.initdb.scripts.create-config-db\\.sql="CREATE DATABASE configdb;" \
             --set persistence.enabled=true \
-            --set persistence.size=8Gi >/dev/null  2>&1
+            --set image.repository="bitnamilegacy/postgresql" \
+            --set global.security.allowInsecureImages=true \
+            --set persistence.size=8Gi | output_redirect
 
         print_status "Waiting for PostgreSQL to be ready..."
         kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=postgresql -n "$NAMESPACE" --timeout=300s >/dev/null 2>&1
@@ -398,8 +476,10 @@ install_kafka() {
             return
         fi
 
-        helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
-        helm repo update >/dev/null  2>&1
+        if [ "$SKIP_HELM_REPO_UPDATES" != true ]; then
+            helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
+            helm repo update >/dev/null  2>&1
+        fi
 
         # Create temporary Kafka values file
         cat > /tmp/kafka-values.yaml << EOF
@@ -438,7 +518,7 @@ EOF
 
         helm install kafka bitnami/kafka \
             --namespace "$NAMESPACE" \
-            --values /tmp/kafka-values.yaml >/dev/null 2>&1
+            --values /tmp/kafka-values.yaml | output_redirect
 
         # Clean up temporary file
         rm -f /tmp/kafka-values.yaml
@@ -771,7 +851,7 @@ install_lakerunner() {
     helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
         --version $LAKERUNNER_VERSION \
         --values generated/values-local.yaml \
-        --namespace $NAMESPACE
+        --namespace $NAMESPACE | output_redirect
     print_success "Lakerunner installed successfully in namespace: $NAMESPACE"
 }
 
@@ -1227,12 +1307,14 @@ install_otel_demo() {
         kubectl get namespace "otel-demo" >/dev/null 2>&1 || kubectl create namespace "otel-demo" >/dev/null 2>&1
 
         # Add OpenTelemetry Helm repository
-        helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 2>/dev/null || true
-        helm repo update >/dev/null  2>&1
+        if [ "$SKIP_HELM_REPO_UPDATES" != true ]; then
+            helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 2>/dev/null || true
+            helm repo update >/dev/null  2>&1
+        fi
 
         helm upgrade --install otel-demo open-telemetry/opentelemetry-demo \
             --namespace otel-demo \
-            --values generated/otel-demo-values.yaml >/dev/null 2>&1
+            --values generated/otel-demo-values.yaml | output_redirect
 
         print_success "OpenTelemetry demo apps installed successfully"
         echo
@@ -1260,6 +1342,8 @@ install_otel_demo() {
 parse_args() {
     SIGNALS_FLAG=""
     STANDALONE_FLAG=false
+    SKIP_HELM_REPO_UPDATES=false
+    VERBOSE=false
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -1269,6 +1353,14 @@ parse_args() {
                 ;;
             --standalone)
                 STANDALONE_FLAG=true
+                shift
+                ;;
+            --skip-helm-repo-updates)
+                SKIP_HELM_REPO_UPDATES=true
+                shift
+                ;;
+            --verbose)
+                VERBOSE=true
                 shift
                 ;;
             --help|-h)
@@ -1290,17 +1382,22 @@ show_help() {
     echo "Usage: $0 [OPTIONS]"
     echo
     echo "Options:"
-    echo "  --signals SIGNALS    Specify which telemetry signals to enable"
-    echo "                       Options: all, logs, metrics, traces"
-    echo "                       Multiple signals can be comma-separated"
-    echo "                       Examples: --signals all"
-    echo "                                --signals metrics"
-    echo "                                --signals logs,metrics,traces"
-    echo "  --standalone         Install in standalone mode with minimal interaction"
-    echo "                       Automatically enables logs and metrics, installs all"
-    echo "                       local infrastructure (PostgreSQL, MinIO, Kafka)"
-    echo "                       Uses default namespace 'lakerunner' and default credentials"
-    echo "  --help, -h          Show this help message"
+    echo "  --signals SIGNALS         Specify which telemetry signals to enable"
+    echo "                            Options: all, logs, metrics, traces"
+    echo "                            Multiple signals can be comma-separated"
+    echo "                            Examples: --signals all"
+    echo "                                     --signals metrics"
+    echo "                                     --signals logs,metrics,traces"
+    echo "  --standalone              Install in standalone mode with minimal interaction"
+    echo "                            Automatically enables logs and metrics, installs all"
+    echo "                            local infrastructure (PostgreSQL, MinIO, Kafka)"
+    echo "                            Uses default namespace 'lakerunner' and default credentials"
+    echo "  --skip-helm-repo-updates  Skip running 'helm repo update' commands during installation"
+    echo "                            Useful when helm repos are already up to date or when"
+    echo "                            working in environments with restricted network access"
+    echo "  --verbose                 Show detailed output from helm install commands"
+    echo "                            By default, helm output is hidden to reduce noise"
+    echo "  --help, -h               Show this help message"
     echo
 }
 
@@ -1477,6 +1574,9 @@ main() {
 
     # Confirm installation
     confirm_installation
+
+    # Pre-flight check for helm repositories (now that we know the configuration)
+    check_helm_repositories
 
     # Start installation process
     print_status "Starting installation process..."
