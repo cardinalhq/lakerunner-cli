@@ -20,7 +20,7 @@
 set -e
 
 # Helm Chart Versions
-LAKERUNNER_VERSION="0.9.1"
+LAKERUNNER_VERSION="0.9.2-rc2"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -115,6 +115,69 @@ show_progress() {
     fi
 
     return $exit_code
+}
+
+# Wait for pods function that handles non-existent pods
+wait_for_pods() {
+    local message="$1"
+    local selector="$2"
+    local namespace="$3"
+    local timeout="${4:-300}"
+
+    if [ "$VERBOSE" = true ]; then
+        print_status "$message..."
+    fi
+
+    local elapsed=0
+    local spinner_chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+    local spinner_len=${#spinner_chars}
+    local i=0
+
+    while [ $elapsed -lt $timeout ]; do
+        # Check if any pods exist with the selector
+        local pod_count=$(kubectl get pods -l "$selector" -n "$namespace" --no-headers 2>/dev/null | wc -l)
+
+        if [ "$pod_count" -gt 0 ]; then
+            # Pods exist, now wait for them to be ready
+            if [ "$VERBOSE" != true ]; then
+                printf "\r\033[K"  # Clear spinner line
+            fi
+
+            if kubectl wait --for=condition=ready pod -l "$selector" -n "$namespace" --timeout=$((timeout - elapsed))s >/dev/null 2>&1; then
+                if [ "$VERBOSE" != true ]; then
+                    print_success "$message completed"
+                else
+                    print_success "$message"
+                fi
+                return 0
+            else
+                if [ "$VERBOSE" != true ]; then
+                    print_error "$message failed - pods found but not ready"
+                else
+                    print_error "$message failed"
+                fi
+                return 1
+            fi
+        fi
+
+        # Show spinner only in non-verbose mode
+        if [ "$VERBOSE" != true ]; then
+            local char=${spinner_chars:$((i % spinner_len)):1}
+            printf "\r${BLUE}[INFO]${NC} %s %s (%ds)" "$message" "$char" "$elapsed"
+        fi
+
+        sleep 1
+        i=$((i + 1))
+        elapsed=$((elapsed + 1))
+    done
+
+    # Timeout reached
+    if [ "$VERBOSE" != true ]; then
+        printf "\r${RED}[ERROR]${NC} %s - timed out after %ds (no pods found)\n" "$message" "$timeout"
+    else
+        print_error "$message - timed out after ${timeout}s (no pods found)"
+    fi
+    return 1
 }
 
 check_prerequisites() {
@@ -980,8 +1043,8 @@ wait_for_services() {
     else
         print_status "Setup job not found (may have already completed or not needed for upgrade)"
     fi
-    show_progress "Waiting for query-api service" "kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=query-api-v2 -n '$NAMESPACE' --timeout=300s" || true
-    show_progress "Waiting for Grafana service" "kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=grafana -n '$NAMESPACE' --timeout=300s" || true
+    wait_for_pods "Waiting for query-api service" "app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=query-api-v2" "$NAMESPACE" 300 || true
+    wait_for_pods "Waiting for Grafana service" "app.kubernetes.io/name=lakerunner,app.kubernetes.io/component=grafana" "$NAMESPACE" 300 || true
     print_success "All services are ready in namespace: $NAMESPACE"
 }
 
