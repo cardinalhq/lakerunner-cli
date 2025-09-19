@@ -235,7 +235,7 @@ check_helm_repositories() {
 
     # Determine which repositories we need based on configuration
     if [ "$INSTALL_MINIO" = true ]; then
-        needed_repos+=("minio https://charts.min.io/")
+        needed_repos+=("bitnami https://charts.bitnami.com/bitnami")
     fi
 
     if [ "$INSTALL_POSTGRES" = true ] || [ "$INSTALL_KAFKA" = true ]; then
@@ -526,29 +526,24 @@ install_minio() {
         fi
 
         if [ "$SKIP_HELM_REPO_UPDATES" != true ]; then
-            helm repo add minio https://charts.min.io/ >/dev/null 2>&1 || true
+            helm repo add bitnami https://charts.bitnami.com/bitnami >/dev/null 2>&1 || true
             helm repo update >/dev/null  2>&1
         fi
 
-        helm install minio minio/minio \
+        helm install minio bitnami/minio \
             --namespace "$NAMESPACE" \
-            --set accessKey=minioadmin \
-            --set secretKey=minioadmin \
+            --set auth.rootUser=minioadmin \
+            --set auth.rootPassword=minioadmin \
             --set mode=standalone \
+            --set replicaCount=1 \
             --set persistence.enabled=true \
             --set persistence.size=10Gi \
             --set service.type=ClusterIP \
             --set resources.requests.memory=128Mi \
             --set resources.requests.cpu=100m \
-            --set service.ports[0].name=http \
-            --set service.ports[0].port=9000 \
-            --set service.ports[0].targetPort=9000 \
-            --set service.ports[1].name=console \
-            --set service.ports[1].port=9001 \
-            --set service.ports[1].targetPort=9001 \
-            --set deploymentUpdate.type=Recreate | output_redirect
+            --set defaultBuckets=lakerunner | output_redirect
 
-        show_progress "Waiting for MinIO to be ready" "kubectl wait --for=condition=ready pod -l app=minio -n '$NAMESPACE' --timeout=300s"
+        show_progress "Waiting for MinIO to be ready" "kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=minio -n '$NAMESPACE' --timeout=300s"
 
         print_success "MinIO installed successfully"
     else
@@ -665,8 +660,8 @@ generate_values_file() {
 
     # After MinIO is installed and before generating values-local.yaml, set credentials:
     if [ "$INSTALL_MINIO" = true ]; then
-        MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
-        MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.root-user}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.root-password}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
     else
         MINIO_ACCESS_KEY="$S3_ACCESS_KEY"
         MINIO_SECRET_KEY="$S3_SECRET_KEY"
@@ -1423,19 +1418,23 @@ setup_minio_webhooks() {
     if [ "$INSTALL_MINIO" = true ]; then
         print_status "Setting up MinIO webhooks for Lakerunner event notifications..."
 
-        # Check if lakerunner bucket exists and create if needed
-        MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
-        MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        # Check if bucket exists - it should already be created by defaultBuckets setting
+        MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.root-user}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.root-password}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
         S3_BUCKET=${S3_BUCKET:-lakerunner}
 
         kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
 
         if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/$S3_BUCKET >/dev/null 2>&1; then
-            print_warning "lakerunner bucket does not exist. Creating it..."
-            kubectl exec -n "$NAMESPACE" deployment/minio -- mc mb minio/lakerunner
-            print_success "lakerunner bucket created successfully"
+            print_warning "$S3_BUCKET bucket does not exist. This should have been created automatically."
+            print_status "Attempting to create bucket manually..."
+            if kubectl exec -n "$NAMESPACE" deployment/minio -- mc mb minio/$S3_BUCKET 2>/dev/null; then
+                print_success "$S3_BUCKET bucket created successfully"
+            else
+                print_warning "Failed to create bucket manually, but continuing (may already exist)"
+            fi
         else
-            print_success "lakerunner bucket already exists"
+            print_success "$S3_BUCKET bucket already exists"
         fi
 
         # Configure webhook notifications
@@ -1479,8 +1478,8 @@ install_otel_demo() {
         # Check if configured bucket exists (required for OTEL demo to work)
         if [ "$INSTALL_MINIO" = true ]; then
             print_status "Checking if $S3_BUCKET bucket exists in MinIO..."
-            MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
-            MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+            MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.root-user}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+            MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.root-password}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
             kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
             if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/$S3_BUCKET >/dev/null 2>&1; then
                 print_error "$S3_BUCKET bucket does not exist. MinIO setup may have failed."
