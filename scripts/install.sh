@@ -1230,9 +1230,18 @@ generate_otel_demo_values() {
     # Create generated directory if it doesn't exist
     mkdir -p generated
 
-    # Get MinIO credentials
-    MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
-    MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+    # Set credentials based on whether MinIO is installed
+    if [ "$INSTALL_MINIO" = true ]; then
+        # Get MinIO credentials
+        ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        BUCKET_NAME=${S3_BUCKET:-lakerunner}
+    else
+        # Use external S3 credentials
+        ACCESS_KEY="$S3_ACCESS_KEY"
+        SECRET_KEY="$S3_SECRET_KEY"
+        BUCKET_NAME="$S3_BUCKET"
+    fi
 
     cat > generated/otel-demo-values.yaml << EOF
 components:
@@ -1284,30 +1293,33 @@ opentelemetry-collector:
       awss3/metrics:
         marshaler: otlp_proto
         s3uploader:
-          s3_bucket: "lakerunner"
+$([ "$INSTALL_MINIO" = true ] && echo "          region: \"us-east-1\"" || echo "          region: \"$S3_REGION\"")
+          s3_bucket: "$BUCKET_NAME"
           s3_prefix: "otel-raw/$ORG_ID/lakerunner"
-          endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
+$([ "$INSTALL_MINIO" = true ] && echo "          endpoint: \"http://minio.$NAMESPACE.svc.cluster.local:9000\"" || echo "          # endpoint: \"\"")
           compression: "gzip"
-          s3_force_path_style: true
-          disable_ssl: true
+$([ "$INSTALL_MINIO" = true ] && echo "          s3_force_path_style: true" || echo "          # s3_force_path_style: false")
+$([ "$INSTALL_MINIO" = true ] && echo "          disable_ssl: true" || echo "          # disable_ssl: false")
       awss3/logs:
         marshaler: otlp_proto
         s3uploader:
-          s3_bucket: "lakerunner"
+$([ "$INSTALL_MINIO" = true ] && echo "          region: \"us-east-1\"" || echo "          region: \"$S3_REGION\"")
+          s3_bucket: "$BUCKET_NAME"
           s3_prefix: "otel-raw/$ORG_ID/lakerunner"
-          endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
+$([ "$INSTALL_MINIO" = true ] && echo "          endpoint: \"http://minio.$NAMESPACE.svc.cluster.local:9000\"" || echo "          # endpoint: \"\"")
           compression: "gzip"
-          s3_force_path_style: true
-          disable_ssl: true
+$([ "$INSTALL_MINIO" = true ] && echo "          s3_force_path_style: true" || echo "          # s3_force_path_style: false")
+$([ "$INSTALL_MINIO" = true ] && echo "          disable_ssl: true" || echo "          # disable_ssl: false")
       awss3/traces:
         marshaler: otlp_proto
         s3uploader:
-          s3_bucket: "lakerunner"
+$([ "$INSTALL_MINIO" = true ] && echo "          region: \"us-east-1\"" || echo "          region: \"$S3_REGION\"")
+          s3_bucket: "$BUCKET_NAME"
           s3_prefix: "otel-raw/$ORG_ID/lakerunner"
-          endpoint: http://minio.$NAMESPACE.svc.cluster.local:9000
+$([ "$INSTALL_MINIO" = true ] && echo "          endpoint: \"http://minio.$NAMESPACE.svc.cluster.local:9000\"" || echo "          # endpoint: \"\"")
           compression: "gzip"
-          s3_force_path_style: true
-          disable_ssl: true
+$([ "$INSTALL_MINIO" = true ] && echo "          s3_force_path_style: true" || echo "          # s3_force_path_style: false")
+$([ "$INSTALL_MINIO" = true ] && echo "          disable_ssl: true" || echo "          # disable_ssl: false")
     service:
       pipelines:
         metrics:
@@ -1328,9 +1340,9 @@ opentelemetry-collector:
           level: none
   extraEnvs:
     - name: AWS_ACCESS_KEY_ID
-      value: "$MINIO_ACCESS_KEY"
+      value: "$ACCESS_KEY"
     - name: AWS_SECRET_ACCESS_KEY
-      value: "$MINIO_SECRET_KEY"
+      value: "$SECRET_KEY"
 jaeger:
   enabled: false
 prometheus:
@@ -1401,18 +1413,18 @@ install_otel_demo() {
     if [ "$INSTALL_OTEL_DEMO" = true ]; then
         print_status "Installing OpenTelemetry demo apps..."
 
-        # Check if lakerunner bucket exists (required for OTEL demo to work)
+        # Check if configured bucket exists (required for OTEL demo to work)
         if [ "$INSTALL_MINIO" = true ]; then
-            print_status "Checking if lakerunner bucket exists in MinIO..."
+            print_status "Checking if $S3_BUCKET bucket exists in MinIO..."
             MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
             MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
             kubectl exec -n "$NAMESPACE" deployment/minio -- mc alias set minio http://localhost:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null 2>&1
-            if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/lakerunner >/dev/null 2>&1; then
-                print_error "lakerunner bucket does not exist. MinIO setup may have failed."
+            if ! kubectl exec -n "$NAMESPACE" deployment/minio -- mc ls minio/$S3_BUCKET >/dev/null 2>&1; then
+                print_error "$S3_BUCKET bucket does not exist. MinIO setup may have failed."
                 exit 1
             fi
         else
-            print_warning "Using external S3 storage. Please ensure the 'lakerunner' bucket exists."
+            print_warning "Using external S3 storage. Please ensure the '$S3_BUCKET' bucket exists."
             print_warning "The OTEL demo apps will fail if the bucket doesn't exist."
             read -p "Press Enter to continue..."
         fi
@@ -1476,6 +1488,10 @@ parse_args() {
                 VERBOSE=true
                 shift
                 ;;
+            --version)
+                LAKERUNNER_VERSION="$2"
+                shift 2
+                ;;
             --help|-h)
                 show_help
                 exit 0
@@ -1510,6 +1526,7 @@ show_help() {
     echo "                            working in environments with restricted network access"
     echo "  --verbose                 Show detailed output from helm install commands"
     echo "                            By default, helm output is hidden to reduce noise"
+    echo "  --version VERSION         Override the Lakerunner helm chart version"
     echo "  --help, -h               Show this help message"
     echo
 }
