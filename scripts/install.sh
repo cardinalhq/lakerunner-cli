@@ -20,7 +20,7 @@
 set -e
 
 # Helm Chart Versions
-LAKERUNNER_VERSION="0.10.0-rc1"
+LAKERUNNER_VERSION="0.10.0"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1022,31 +1022,31 @@ EOF
 install_lakerunner() {
     print_status "Installing Lakerunner in namespace: $NAMESPACE"
 
-    # Capture helm output for error analysis
-    helm_output=$(helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
+    # Run helm install and capture output to temp file
+    helm_output_file="/tmp/helm_install_output_$$"
+    helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
         --version $LAKERUNNER_VERSION \
         --values generated/values-local.yaml \
-        --namespace $NAMESPACE 2>&1)
+        --namespace $NAMESPACE > "$helm_output_file" 2>&1
     helm_exit_code=$?
+    helm_output=$(cat "$helm_output_file" 2>/dev/null || echo "Failed to read helm output")
 
     if [ $helm_exit_code -ne 0 ]; then
-        print_error "Lakerunner installation failed"
+        print_error "Lakerunner installation failed with exit code: $helm_exit_code"
+        echo
+        echo "Helm command that failed:"
+        echo "helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner --version $LAKERUNNER_VERSION --values generated/values-local.yaml --namespace $NAMESPACE"
+        echo
+        echo "Error output:"
         echo "$helm_output"
         echo
-
-        # Check for ECR authentication error and provide helpful guidance
-        if echo "$helm_output" | grep -q "authorization token has expired\|denied.*Reauthenticate"; then
-            print_error "ECR authentication error detected."
-            echo "To fix this, try one of the following:"
-            echo "1. Log out of the ECR registry:"
-            echo "   helm registry logout public.ecr.aws"
-            echo "2. Or re-authenticate to ECR (if you have AWS credentials):"
-            echo "   aws ecr-public get-login-password --region us-east-1 | helm registry login --username AWS --password-stdin public.ecr.aws"
-            echo
-            echo "Then re-run the installation script."
-        fi
+        print_error "Installation cannot continue. Please resolve the above error and try again."
+        rm -f "$helm_output_file"
         exit 1
     fi
+
+    # Clean up temp file on success
+    rm -f "$helm_output_file"
 
     # Show output in verbose mode
     if [ "$VERBOSE" = true ]; then
