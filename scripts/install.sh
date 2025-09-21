@@ -20,7 +20,7 @@
 set -e
 
 # Helm Chart Versions
-LAKERUNNER_VERSION="0.9.2-rc2"
+LAKERUNNER_VERSION="0.10.0-rc1"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1022,10 +1022,37 @@ EOF
 install_lakerunner() {
     print_status "Installing Lakerunner in namespace: $NAMESPACE"
 
-    helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
+    # Capture helm output for error analysis
+    helm_output=$(helm install lakerunner oci://public.ecr.aws/cardinalhq.io/lakerunner \
         --version $LAKERUNNER_VERSION \
         --values generated/values-local.yaml \
-        --namespace $NAMESPACE | output_redirect
+        --namespace $NAMESPACE 2>&1)
+    helm_exit_code=$?
+
+    if [ $helm_exit_code -ne 0 ]; then
+        print_error "Lakerunner installation failed"
+        echo "$helm_output"
+        echo
+
+        # Check for ECR authentication error and provide helpful guidance
+        if echo "$helm_output" | grep -q "authorization token has expired\|denied.*Reauthenticate"; then
+            print_error "ECR authentication error detected."
+            echo "To fix this, try one of the following:"
+            echo "1. Log out of the ECR registry:"
+            echo "   helm registry logout public.ecr.aws"
+            echo "2. Or re-authenticate to ECR (if you have AWS credentials):"
+            echo "   aws ecr-public get-login-password --region us-east-1 | helm registry login --username AWS --password-stdin public.ecr.aws"
+            echo
+            echo "Then re-run the installation script."
+        fi
+        exit 1
+    fi
+
+    # Show output in verbose mode
+    if [ "$VERBOSE" = true ]; then
+        echo "$helm_output"
+    fi
+
     print_success "Lakerunner installed successfully in namespace: $NAMESPACE"
 }
 
@@ -1112,12 +1139,12 @@ display_connection_info() {
     # MinIO Console Access (only if MinIO was installed)
     if [ "$INSTALL_MINIO" = true ]; then
         # Get MinIO credentials
-        MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
-        MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        MINIO_ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.root-user}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        MINIO_SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.root-password}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
 
         echo "=== MinIO Console Access ==="
         echo "To access MinIO Console:"
-        echo "  kubectl port-forward svc/minio-console 9001:9001 -n $NAMESPACE"
+        echo "  kubectl port-forward svc/minio-console 9001:9090 -n $NAMESPACE"
         echo "  Then visit: http://localhost:9001"
         echo "  Access Key: $MINIO_ACCESS_KEY"
         echo "  Secret Key: $MINIO_SECRET_KEY"
@@ -1291,8 +1318,8 @@ generate_otel_demo_values() {
     # Set credentials based on whether MinIO is installed
     if [ "$INSTALL_MINIO" = true ]; then
         # Get MinIO credentials
-        ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootUser}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
-        SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.rootPassword}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        ACCESS_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.root-user}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
+        SECRET_KEY=$(kubectl get secret minio -n "$NAMESPACE" -o jsonpath="{.data.root-password}" 2>/dev/null | base64 --decode 2>/dev/null || echo "minioadmin")
         BUCKET_NAME=${S3_BUCKET:-lakerunner}
     else
         # Use external S3 credentials
