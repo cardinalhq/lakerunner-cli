@@ -17,6 +17,7 @@ package logs
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
