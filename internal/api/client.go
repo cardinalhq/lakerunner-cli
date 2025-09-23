@@ -116,7 +116,10 @@ func (c *Client) QueryLogTags(ctx context.Context, s string, e string) (<-chan L
 		"s": s,
 		"e": e,
 	}
-	jsonData, _ := json.Marshal(body)
+	jsonData, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
