@@ -28,12 +28,11 @@ import (
 )
 
 var (
-	attributesFilters      []string
-	attributesRegexFilters []string
-	attributesStartTime    string
-	attributesEndTime      string
-	attributesAppName      string
-	attributesLogLevel     string
+	attributesFilters   []string
+	attributesStartTime string
+	attributesEndTime   string
+	attributesAppName   string
+	attributesLogLevel  string
 )
 
 var AttributesCmd = &cobra.Command{
@@ -101,7 +100,7 @@ func runAttributesCmd(cmdObj *cobra.Command, _ []string) error {
 	tagsSet := make(map[string]bool)
 	for response := range responseChan {
 		if response.Type == "data" {
-			if tagsArr, ok := response.Message["tags"].([]string); ok {
+			if tagsArr, ok := response.Data["tags"].([]string); ok {
 				for _, tagName := range tagsArr {
 					if strings.HasPrefix(tagName, "_cardinalhq") {
 						continue
@@ -116,7 +115,7 @@ func runAttributesCmd(cmdObj *cobra.Command, _ []string) error {
 					}
 				}
 			} else {
-				fmt.Fprintf(os.Stderr, "DEBUG: unexpected tags format: %#v\n", response.Message["tags"])
+				fmt.Fprintf(os.Stderr, "DEBUG: unexpected tags format: %#v\n", response.Data["tags"])
 			}
 		}
 	}

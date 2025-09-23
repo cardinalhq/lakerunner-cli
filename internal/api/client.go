@@ -35,13 +35,6 @@ type Client struct {
 	client  *http.Client
 }
 
-// LogsResponse represents a response from the logs endpoint
-type LogsResponse struct {
-	ID      string                 `json:"id"`
-	Type    string                 `json:"type"`
-	Message map[string]interface{} `json:"message"`
-	Data    map[string]interface{} `json:"data"`
-}
 
 // NewClient creates a new API client with proper configuration
 func NewClient(cfg *config.Config) *Client {
@@ -130,7 +123,7 @@ func (c *Client) QueryLogTags(ctx context.Context, s string, e string) (<-chan L
 	if err != nil {
 		return nil, fmt.Errorf("failed to make request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -147,7 +140,7 @@ func (c *Client) QueryLogTags(ctx context.Context, s string, e string) (<-chan L
 	go func() {
 		defer close(responseChan)
 		msg := map[string]interface{}{"tags": parsed.Tags}
-		responseChan <- LogsResponse{Type: "data", Message: msg}
+		responseChan <- LogsResponse{Type: "data", Data: msg}
 	}()
 	return responseChan, nil
 }

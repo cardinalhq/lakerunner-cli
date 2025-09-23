@@ -18,9 +18,9 @@ import "encoding/json"
 
 // LogsResponse represents a response from the logs endpoint
 type LogsResponse struct {
-	ID      string         `json:"id"`
-	Type    string         `json:"type"`
-	Message map[string]any `json:"message"`
+	ID   string         `json:"id"`
+	Type string         `json:"type"`
+	Data map[string]any `json:"data"`
 }
 
 // UnmarshalJSON implements custom JSON unmarshaling to preserve timestamp precision
@@ -29,7 +29,7 @@ func (lr *LogsResponse) UnmarshalJSON(data []byte) error {
 	type Alias LogsResponse
 	aux := &struct {
 		*Alias
-		Message json.RawMessage `json:"message"`
+		Data json.RawMessage `json:"data"`
 	}{
 		Alias: (*Alias)(lr),
 	}
@@ -38,47 +38,59 @@ func (lr *LogsResponse) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	// Now handle the message field specially
-	if len(aux.Message) > 0 {
-		// First unmarshal into a temporary map to check for timestamp fields
-		var tempMsg map[string]json.RawMessage
-		if err := json.Unmarshal(aux.Message, &tempMsg); err != nil {
-			return err
+	// Helper function to process timestamp fields
+	processTimestampFields := func(rawMap json.RawMessage) (map[string]any, error) {
+		if len(rawMap) == 0 {
+			return nil, nil
 		}
 
-		// Initialize the final message map
-		lr.Message = make(map[string]any)
+		// First unmarshal into a temporary map to check for timestamp fields
+		var tempMap map[string]json.RawMessage
+		if err := json.Unmarshal(rawMap, &tempMap); err != nil {
+			return nil, err
+		}
+
+		// Initialize the final map
+		result := make(map[string]any)
 
 		// Process each field
-		for key, rawValue := range tempMsg {
+		for key, rawValue := range tempMap {
 			if key == "timestamp" || key == "tsns" {
 				// Try to unmarshal as int64 first
 				var intVal int64
 				if err := json.Unmarshal(rawValue, &intVal); err == nil {
-					lr.Message[key] = intVal
+					result[key] = intVal
 				} else {
 					// Fall back to float64 if it's not an integer
 					var floatVal float64
 					if err := json.Unmarshal(rawValue, &floatVal); err == nil {
-						lr.Message[key] = int64(floatVal)
+						result[key] = int64(floatVal)
 					} else {
 						// If neither works, unmarshal as generic interface{}
 						var val any
 						if err := json.Unmarshal(rawValue, &val); err != nil {
-							return err
+							return nil, err
 						}
-						lr.Message[key] = val
+						result[key] = val
 					}
 				}
 			} else {
 				// For all other fields, use standard unmarshaling
 				var val any
 				if err := json.Unmarshal(rawValue, &val); err != nil {
-					return err
+					return nil, err
 				}
-				lr.Message[key] = val
+				result[key] = val
 			}
 		}
+		return result, nil
+	}
+
+	// Handle the data field
+	if processedData, err := processTimestampFields(aux.Data); err != nil {
+		return err
+	} else if processedData != nil {
+		lr.Data = processedData
 	}
 
 	return nil
