@@ -32,22 +32,22 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			jsonData: `{
 				"id": "test-1",
 				"type": "event",
-				"message": {
+				"data": {
 					"timestamp": 1704067200000,
 					"tags": {
 						"level": "INFO",
-						"message": "test message"
+						"data": "test message"
 					}
 				}
 			}`,
 			want: LogsResponse{
 				ID:   "test-1",
 				Type: "event",
-				Message: map[string]any{
+				Data: map[string]any{
 					"timestamp": int64(1704067200000),
 					"tags": map[string]any{
 						"level":   "INFO",
-						"message": "test message",
+						"data": "test message",
 					},
 				},
 			},
@@ -57,7 +57,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			jsonData: `{
 				"id": "test-2",
 				"type": "event",
-				"message": {
+				"data": {
 					"tsns": 1704067200123456789,
 					"tags": {
 						"level": "DEBUG"
@@ -67,7 +67,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			want: LogsResponse{
 				ID:   "test-2",
 				Type: "event",
-				Message: map[string]any{
+				Data: map[string]any{
 					"tsns": int64(1704067200123456789),
 					"tags": map[string]any{
 						"level": "DEBUG",
@@ -80,7 +80,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			jsonData: `{
 				"id": "test-3",
 				"type": "timeseries",
-				"message": {
+				"data": {
 					"timestamp": 1704067200000,
 					"tsns": 1704067200123456789,
 					"value": 42.5
@@ -89,7 +89,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			want: LogsResponse{
 				ID:   "test-3",
 				Type: "timeseries",
-				Message: map[string]any{
+				Data: map[string]any{
 					"timestamp": int64(1704067200000),
 					"tsns":      int64(1704067200123456789),
 					"value":     42.5,
@@ -101,7 +101,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			jsonData: `{
 				"id": "test-4",
 				"type": "event",
-				"message": {
+				"data": {
 					"timestamp": 1704067200000.0,
 					"tags": {}
 				}
@@ -109,7 +109,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			want: LogsResponse{
 				ID:   "test-4",
 				Type: "event",
-				Message: map[string]any{
+				Data: map[string]any{
 					"timestamp": int64(1704067200000),
 					"tags":      map[string]any{},
 				},
@@ -120,7 +120,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			jsonData: `{
 				"id": "test-5",
 				"type": "event",
-				"message": {
+				"data": {
 					"timestamp": 9999999999999,
 					"tsns": 9223372036854775807
 				}
@@ -128,7 +128,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			want: LogsResponse{
 				ID:   "test-5",
 				Type: "event",
-				Message: map[string]any{
+				Data: map[string]any{
 					"timestamp": int64(9999999999999),
 					"tsns":      int64(9223372036854775807), // max int64
 				},
@@ -139,7 +139,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			jsonData: `{
 				"id": "test-6",
 				"type": "data",
-				"message": {
+				"data": {
 					"timestamp": 1704067200000,
 					"string_field": "hello",
 					"number_field": 123.45,
@@ -152,7 +152,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			want: LogsResponse{
 				ID:   "test-6",
 				Type: "data",
-				Message: map[string]any{
+				Data: map[string]any{
 					"timestamp":    int64(1704067200000),
 					"string_field": "hello",
 					"number_field": 123.45,
@@ -168,12 +168,12 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			jsonData: `{
 				"id": "test-7",
 				"type": "event",
-				"message": {}
+				"data": {}
 			}`,
 			want: LogsResponse{
 				ID:      "test-7",
 				Type:    "event",
-				Message: map[string]any{},
+				Data: map[string]any{},
 			},
 		},
 		{
@@ -185,7 +185,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			want: LogsResponse{
 				ID:      "test-8",
 				Type:    "event",
-				Message: nil,
+				Data: nil,
 			},
 		},
 		{
@@ -193,7 +193,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			jsonData: `{
 				"id": "test-9",
 				"type": "event",
-				"message": {
+				"data": {
 					"timestamp": "not-a-number",
 					"tsns": "also-not-a-number"
 				}
@@ -201,7 +201,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			want: LogsResponse{
 				ID:   "test-9",
 				Type: "event",
-				Message: map[string]any{
+				Data: map[string]any{
 					"timestamp": "not-a-number",
 					"tsns":      "also-not-a-number",
 				},
@@ -212,7 +212,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			jsonData: `{
 				"id": "test-10",
 				"type": "event",
-				"message": {
+				"data": {
 					"timestamp": -1704067200000,
 					"tsns": -1704067200123456789
 				}
@@ -220,7 +220,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			want: LogsResponse{
 				ID:   "test-10",
 				Type: "event",
-				Message: map[string]any{
+				Data: map[string]any{
 					"timestamp": int64(-1704067200000),
 					"tsns":      int64(-1704067200123456789),
 				},
@@ -248,18 +248,18 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 				if !reflect.DeepEqual(got.Type, tt.want.Type) {
 					t.Errorf("  Type: got %v, want %v", got.Type, tt.want.Type)
 				}
-				if !reflect.DeepEqual(got.Message, tt.want.Message) {
-					t.Errorf("  Message: got %v, want %v", got.Message, tt.want.Message)
+				if !reflect.DeepEqual(got.Data, tt.want.Data) {
+					t.Errorf("  Data: got %v, want %v", got.Data, tt.want.Data)
 
 					// Check specific timestamp fields
-					if got.Message != nil && tt.want.Message != nil {
-						if gotTS, ok := got.Message["timestamp"]; ok {
-							if wantTS, wok := tt.want.Message["timestamp"]; wok {
+					if got.Data != nil && tt.want.Data != nil {
+						if gotTS, ok := got.Data["timestamp"]; ok {
+							if wantTS, wok := tt.want.Data["timestamp"]; wok {
 								t.Errorf("    timestamp: got %T(%v), want %T(%v)", gotTS, gotTS, wantTS, wantTS)
 							}
 						}
-						if gotTS, ok := got.Message["tsns"]; ok {
-							if wantTS, wok := tt.want.Message["tsns"]; wok {
+						if gotTS, ok := got.Data["tsns"]; ok {
+							if wantTS, wok := tt.want.Data["tsns"]; wok {
 								t.Errorf("    tsns: got %T(%v), want %T(%v)", gotTS, gotTS, wantTS, wantTS)
 							}
 						}
@@ -276,7 +276,7 @@ func TestLogsResponse_TimestampPrecision(t *testing.T) {
 	jsonData := `{
 		"id": "max-test",
 		"type": "event",
-		"message": {
+		"data": {
 			"timestamp": 9223372036854775807,
 			"tsns": 9223372036854775807
 		}
@@ -288,12 +288,12 @@ func TestLogsResponse_TimestampPrecision(t *testing.T) {
 		t.Fatalf("Failed to unmarshal: %v", err)
 	}
 
-	if ts, ok := got.Message["timestamp"].(int64); !ok || ts != maxInt64 {
-		t.Errorf("timestamp precision lost: got %v (%T), want %v", got.Message["timestamp"], got.Message["timestamp"], maxInt64)
+	if ts, ok := got.Data["timestamp"].(int64); !ok || ts != maxInt64 {
+		t.Errorf("timestamp precision lost: got %v (%T), want %v", got.Data["timestamp"], got.Data["timestamp"], maxInt64)
 	}
 
-	if ts, ok := got.Message["tsns"].(int64); !ok || ts != maxInt64 {
-		t.Errorf("tsns precision lost: got %v (%T), want %v", got.Message["tsns"], got.Message["tsns"], maxInt64)
+	if ts, ok := got.Data["tsns"].(int64); !ok || ts != maxInt64 {
+		t.Errorf("tsns precision lost: got %v (%T), want %v", got.Data["tsns"], got.Data["tsns"], maxInt64)
 	}
 }
 
@@ -304,21 +304,21 @@ func deepEqual(a, b LogsResponse) bool {
 	}
 
 	// Handle nil cases
-	if a.Message == nil && b.Message == nil {
+	if a.Data == nil && b.Data == nil {
 		return true
 	}
-	if a.Message == nil || b.Message == nil {
+	if a.Data == nil || b.Data == nil {
 		return false
 	}
 
 	// Check map lengths
-	if len(a.Message) != len(b.Message) {
+	if len(a.Data) != len(b.Data) {
 		return false
 	}
 
 	// Compare each key-value pair
-	for key, aVal := range a.Message {
-		bVal, ok := b.Message[key]
+	for key, aVal := range a.Data {
+		bVal, ok := b.Data[key]
 		if !ok {
 			return false
 		}
