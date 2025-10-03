@@ -63,7 +63,6 @@ func init() {
 	TagValuesCmd.Flags().StringVarP(&attributesEndTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	TagValuesCmd.Flags().StringVarP(&attributesAppName, "app", "a", "", "Filter by application/service name")
 	TagValuesCmd.Flags().StringVarP(&attributesLogLevel, "level", "l", "", "Filter by log level (e.g., ERROR, INFO, DEBUG, WARN)")
-
 }
 
 func runAttributesCmd(cmdObj *cobra.Command, _ []string) error {
@@ -77,7 +76,6 @@ func runAttributesCmd(cmdObj *cobra.Command, _ []string) error {
 	}
 	client := api.NewClient(cfg)
 
-	// Parse time range
 	startMs, endMs, err := dateutils.ToStartEnd(attributesStartTime, attributesEndTime)
 	if err != nil {
 		return fmt.Errorf("failed to parse time range: %w", err)
@@ -88,7 +86,6 @@ func runAttributesCmd(cmdObj *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Call /logs/tags
 	responseChan, err := client.QueryLogTags(ctx, startTimeStr, endTimeStr)
 	if err != nil {
 		return fmt.Errorf("failed to query tags: %w", err)
@@ -137,7 +134,7 @@ func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
 	}
 	client := api.NewClient(cfg)
 
-	tagName := args[0]
+	tagName := normalizeTag(args[0])
 
 	startMs, endMs, err := dateutils.ToStartEnd(attributesStartTime, attributesEndTime)
 	if err != nil {
@@ -149,18 +146,18 @@ func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	// Build LogQL query string (only if filters are provided)
 	var conditions []string
 	if attributesAppName != "" {
-		conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, attributesAppName))
+		conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, normalizeTag(attributesAppName)))
 	}
 	if attributesLogLevel != "" {
-		conditions = append(conditions, fmt.Sprintf(`_cardinalhq_level="%s"`, attributesLogLevel))
+		conditions = append(conditions, fmt.Sprintf(`_cardinalhq_level="%s"`, normalizeTag(attributesLogLevel)))
 	}
 	for _, f := range attributesFilters {
 		if parts := strings.SplitN(f, ":", 2); len(parts) == 2 {
 			key := normalizeTag(parts[0])
-			conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, parts[1]))
+			val := normalizeTag(parts[1])
+			conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, val))
 		}
 	}
 
@@ -168,7 +165,7 @@ func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
 	if len(conditions) > 0 {
 		q = "{" + strings.Join(conditions, ", ") + "}"
 	} else {
-		q = "" // omit q entirely if no filters
+		q = ""
 	}
 
 	// Call /logs/tagvalues

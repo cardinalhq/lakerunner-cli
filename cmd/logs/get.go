@@ -60,9 +60,9 @@ func getColorForLevel(level string, noColor bool) string {
 	}
 }
 
-// normalizeTag converts dot-separated keys
-func normalizeTag(tag string) string {
-	return strings.ReplaceAll(tag, ".", "_")
+// normalizeTag replaces dots with underscores in keys/values
+func normalizeTag(s string) string {
+	return strings.ReplaceAll(s, ".", "_")
 }
 
 var (
@@ -147,16 +147,17 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	// Build LogQL query string
 	var conditions []string
 	if appName != "" {
-		conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, appName))
+		conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, normalizeTag(appName)))
 	}
 	if logLevel != "" {
-		conditions = append(conditions, fmt.Sprintf(`_cardinalhq_level="%s"`, logLevel))
+		conditions = append(conditions, fmt.Sprintf(`_cardinalhq_level="%s"`, normalizeTag(logLevel)))
 	}
 	for _, f := range filters {
 		parts := strings.SplitN(f, ":", 2)
 		if len(parts) == 2 {
 			key := normalizeTag(parts[0])
-			conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, parts[1]))
+			val := normalizeTag(parts[1])
+			conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, val))
 		}
 	}
 
@@ -165,18 +166,17 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		q = "{" + strings.Join(conditions, ", ") + "}"
 	}
 
-	// add message operators
 	if messageContains != "" {
-		q += fmt.Sprintf(` |= "%s"`, messageContains)
+		q += fmt.Sprintf(` |= "%s"`, normalizeTag(messageContains))
 	}
 	if messageNotContains != "" {
-		q += fmt.Sprintf(` != "%s"`, messageNotContains)
+		q += fmt.Sprintf(` != "%s"`, normalizeTag(messageNotContains))
 	}
 	if messageRegexMatch != "" {
-		q += fmt.Sprintf(` |~ "%s"`, messageRegexMatch)
+		q += fmt.Sprintf(` |~ "%s"`, normalizeTag(messageRegexMatch))
 	}
 	if messageRegexNot != "" {
-		q += fmt.Sprintf(` !~ "%s"`, messageRegexNot)
+		q += fmt.Sprintf(` !~ "%s"`, normalizeTag(messageRegexNot))
 	}
 
 	// Context with timeout
@@ -227,12 +227,9 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 
 		// Get timestamp with proper precision handling
 		timestamp := ""
-		// Check for nanosecond precision first (now preserved as int64)
 		if tsns, ok := message["tsns"].(int64); ok {
-			// tsns is in nanoseconds
 			timestamp = time.Unix(0, tsns).Format("2006-01-02 15:04:05.999999999")
 		} else if ts, ok := message["timestamp"].(int64); ok {
-			// timestamp is in milliseconds as int64
 			timestamp = time.UnixMilli(ts).Format("2006-01-02 15:04:05.000")
 		} else if ts, ok := message["timestamp"].(float64); ok {
 			timestamp = time.Unix(int64(ts)/1000, 0).Format("2006-01-02 15:04:05")
@@ -244,16 +241,16 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		podName := ""
 		tags, _ := message["tags"].(map[string]interface{})
 		if tags != nil {
-			if msg, ok := tags["_cardinalhq.message"].(string); ok {
+			if msg, ok := tags["_cardinalhq_message"].(string); ok {
 				logMessage = msg
 			}
-			if service, ok := tags["resource.service.name"].(string); ok {
+			if service, ok := tags["resource_service_name"].(string); ok {
 				serviceName = service
 			}
-			if level, ok := tags["_cardinalhq.level"].(string); ok {
+			if level, ok := tags["_cardinalhq_level"].(string); ok {
 				levelVal = level
 			}
-			if pod, ok := tags["resource.k8s.pod.name"].(string); ok {
+			if pod, ok := tags["resource_k8s_pod_name"].(string); ok {
 				podName = pod
 			}
 		}
@@ -291,14 +288,14 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 					}
 				default:
 					if tags != nil {
-						// try dotted, normalized, and prefixed keys
+						colNorm := normalizeTag(col)
 						if v, ok := tags[col]; ok {
 							val = fmt.Sprintf("%v", v)
-						} else if v, ok := tags[normalizeTag(col)]; ok {
+						} else if v, ok := tags[colNorm]; ok {
 							val = fmt.Sprintf("%v", v)
 						} else if v, ok := tags["_cardinalhq."+col]; ok {
 							val = fmt.Sprintf("%v", v)
-						} else if v, ok := tags["_cardinalhq."+normalizeTag(col)]; ok {
+						} else if v, ok := tags["_cardinalhq."+colNorm]; ok {
 							val = fmt.Sprintf("%v", v)
 						} else {
 							val = "<undefined>"
