@@ -91,8 +91,6 @@ func init() {
 	GetCmd.Flags().StringVarP(&messageNotContains, "not-contains", "N", "", "Filter logs where message does not contain this string (!=)")
 	GetCmd.Flags().StringVarP(&messageRegexMatch, "msg-regex", "R", "", "Filter logs where message matches this regex (|~)")
 	GetCmd.Flags().StringVarP(&messageRegexNot, "msg-not-regex", "X", "", "Filter logs where message does not match this regex (!~)")
-	GetCmd.Flags().Bool("no-color", false, "Disable colored output")
-	GetCmd.Flags().Bool("quiet", false, "Suppress query and progress output")
 }
 
 var GetCmd = &cobra.Command{
@@ -150,7 +148,7 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, normalizeTag(appName)))
 	}
 	if logLevel != "" {
-		conditions = append(conditions, fmt.Sprintf(`_cardinalhq_level="%s"`, normalizeTag(logLevel)))
+		conditions = append(conditions, fmt.Sprintf(`log_level="%s"`, normalizeTag(logLevel)))
 	}
 	for _, f := range filters {
 		parts := strings.SplitN(f, ":", 2)
@@ -241,13 +239,13 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		podName := ""
 		tags, _ := message["tags"].(map[string]interface{})
 		if tags != nil {
-			if msg, ok := tags["_cardinalhq_message"].(string); ok {
+			if msg, ok := tags["log_message"].(string); ok {
 				logMessage = msg
 			}
 			if service, ok := tags["resource_service_name"].(string); ok {
 				serviceName = service
 			}
-			if level, ok := tags["_cardinalhq_level"].(string); ok {
+			if level, ok := tags["log_level"].(string); ok {
 				levelVal = level
 			}
 			if pod, ok := tags["resource_k8s_pod_name"].(string); ok {
@@ -293,10 +291,6 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 							val = fmt.Sprintf("%v", v)
 						} else if v, ok := tags[colNorm]; ok {
 							val = fmt.Sprintf("%v", v)
-						} else if v, ok := tags["_cardinalhq."+col]; ok {
-							val = fmt.Sprintf("%v", v)
-						} else if v, ok := tags["_cardinalhq."+colNorm]; ok {
-							val = fmt.Sprintf("%v", v)
 						} else {
 							val = "<undefined>"
 						}
@@ -307,13 +301,12 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 			fmt.Println(strings.Join(parts, " "))
 		} else {
 			if noColor {
-				fmt.Printf("[%s] %s %s %s: %s\n", timestamp, levelVal, serviceName, podName, logMessage)
+				fmt.Printf("[%s] %s %s: %s\n", timestamp, levelVal, serviceName, logMessage)
 			} else {
-				fmt.Printf("[%s%s%s] %s%s%s %s%s%s %s%s%s: %s\n",
+				fmt.Printf("[%s%s%s] %s%s%s %s%s%s: %s\n",
 					colorBlue, timestamp, colorReset,
 					getColorForLevel(levelVal, noColor), levelVal, colorReset,
 					colorCyan, serviceName, colorReset,
-					colorPurple, podName, colorReset,
 					logMessage)
 			}
 		}
