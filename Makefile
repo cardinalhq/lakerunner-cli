@@ -1,4 +1,4 @@
-# Copyright 2025 CardinalHQ, Inc
+# Copyright 2025-2026 CardinalHQ, Inc
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -65,15 +65,21 @@ generate:
 	go generate ./...
 
 #
+# Install development tools
+#
+tools/golangci-lint tools/license-eye tools/goreleaser:
+	./scripts/install-tools.sh
+
+#
 # Run pre-commit checks
 #
 check: test license-check lint
 
-license-check:
-	go tool license-eye header check
+license-check: tools/license-eye
+	./tools/license-eye header check
 
-lint:
-	go tool golangci-lint run --timeout 15m --config .golangci.yaml
+lint: tools/golangci-lint
+	./tools/golangci-lint run --timeout 15m --config .golangci.yaml
 
 #
 # Build locally, mostly for development speed.
@@ -89,15 +95,15 @@ bin/lakerunner-cli: ${all_deps}
 # Multi-architecture image builds
 #
 .PHONY: images
-images: test-only
-	$(call with_builder, go tool goreleaser release --clean)
+images: test-only tools/goreleaser
+	$(call with_builder, ./tools/goreleaser release --clean)
 
 #
 # Build binaries for all platforms
 #
 .PHONY: binaries
-binaries: test-only
-	goreleaser release --clean --config .goreleaser-release.yaml --skip=docker
+binaries: test-only tools/goreleaser
+	./tools/goreleaser release --clean --config .goreleaser-release.yaml --skip=docker
 
 #
 # Test targets
