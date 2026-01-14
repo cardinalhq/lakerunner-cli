@@ -23,6 +23,7 @@ go.work
 go.work.sum
 bin
 dist
+tools
 vendor
 
 # generated files from lakerunner install script
