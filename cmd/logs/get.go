@@ -24,6 +24,7 @@ import (
 	"github.com/cardinalhq/oteltools/pkg/dateutils"
 	"github.com/lakerunner/cli/internal/api"
 	"github.com/lakerunner/cli/internal/config"
+	"github.com/lakerunner/cli/internal/presets"
 	"github.com/spf13/cobra"
 )
 
@@ -68,6 +69,7 @@ func normalizeTag(s string) string {
 var (
 	limit              int
 	filters            []string
+	preset             string
 	startTime          string
 	endTime            string
 	appName            string
@@ -82,6 +84,7 @@ var (
 func init() {
 	GetCmd.Flags().IntVar(&limit, "limit", 1000, "Limit the number of results returned")
 	GetCmd.Flags().StringSliceVarP(&filters, "filter", "f", []string{}, "Filter in format 'key:value' (can be used multiple times)")
+	GetCmd.Flags().StringVarP(&preset, "preset", "p", "", "Use a named filter preset from ~/.lakerunner/config.yaml")
 	GetCmd.Flags().StringVarP(&startTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	GetCmd.Flags().StringVarP(&endTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	GetCmd.Flags().StringVarP(&appName, "app", "a", "", "Filter logs by application/service name")
@@ -142,6 +145,16 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	startTimeStr := fmt.Sprintf("%d", startMs)
 	endTimeStr := fmt.Sprintf("%d", endMs)
 
+	// Load preset filters if specified
+	allFilters := filters
+	if preset != "" {
+		presetFilters, err := presets.GetFilters(preset)
+		if err != nil {
+			return err
+		}
+		allFilters = append(presetFilters, filters...)
+	}
+
 	// Build LogQL query string
 	var conditions []string
 	if appName != "" {
@@ -150,7 +163,7 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	if logLevel != "" {
 		conditions = append(conditions, fmt.Sprintf(`log_level="%s"`, normalizeTag(logLevel)))
 	}
-	for _, f := range filters {
+	for _, f := range allFilters {
 		parts := strings.SplitN(f, ":", 2)
 		if len(parts) == 2 {
 			key := normalizeTag(parts[0])
