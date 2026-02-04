@@ -79,6 +79,7 @@ var (
 	messageNotContains string
 	messageRegexMatch  string
 	messageRegexNot    string
+	getAliasValues     map[string]*string
 )
 
 func init() {
@@ -94,6 +95,7 @@ func init() {
 	GetCmd.Flags().StringVarP(&messageNotContains, "not-contains", "N", "", "Filter logs where message does not contain this string (!=)")
 	GetCmd.Flags().StringVarP(&messageRegexMatch, "msg-regex", "R", "", "Filter logs where message matches this regex (|~)")
 	GetCmd.Flags().StringVarP(&messageRegexNot, "msg-not-regex", "X", "", "Filter logs where message does not match this regex (!~)")
+	getAliasValues = presets.RegisterAliasFlags(GetCmd)
 }
 
 var GetCmd = &cobra.Command{
@@ -154,6 +156,15 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		}
 		allFilters = append(presetFilters, filters...)
 	}
+
+	// Resolve filter aliases in -f values
+	allFilters, err = presets.ResolveFilters(allFilters)
+	if err != nil {
+		return err
+	}
+
+	// Collect filters from alias flags (e.g., -i prod)
+	allFilters = append(allFilters, presets.CollectAliasFilters(getAliasValues)...)
 
 	// Build LogQL query string
 	var conditions []string

@@ -29,12 +29,14 @@ import (
 )
 
 var (
-	attributesFilters   []string
-	attributesPreset    string
-	attributesStartTime string
-	attributesEndTime   string
-	attributesAppName   string
-	attributesLogLevel  string
+	attributesFilters    []string
+	attributesPreset     string
+	attributesStartTime  string
+	attributesEndTime    string
+	attributesAppName    string
+	attributesLogLevel   string
+	attrAliasValues      map[string]*string
+	tagValuesAliasValues map[string]*string
 )
 
 var AttributesCmd = &cobra.Command{
@@ -67,6 +69,8 @@ func init() {
 	TagValuesCmd.Flags().StringVarP(&attributesEndTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	TagValuesCmd.Flags().StringVarP(&attributesAppName, "app", "a", "", "Filter by application/service name")
 	TagValuesCmd.Flags().StringVarP(&attributesLogLevel, "level", "l", "", "Filter by log level (e.g., ERROR, INFO, DEBUG, WARN)")
+	attrAliasValues = presets.RegisterAliasFlags(AttributesCmd)
+	tagValuesAliasValues = presets.RegisterAliasFlags(TagValuesCmd)
 }
 
 func runAttributesCmd(cmdObj *cobra.Command, _ []string) error {
@@ -159,6 +163,15 @@ func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
 		}
 		allFilters = append(presetFilters, attributesFilters...)
 	}
+
+	// Resolve filter aliases in -f values
+	allFilters, err = presets.ResolveFilters(allFilters)
+	if err != nil {
+		return err
+	}
+
+	// Collect filters from alias flags (e.g., -i prod)
+	allFilters = append(allFilters, presets.CollectAliasFilters(tagValuesAliasValues)...)
 
 	var conditions []string
 	if attributesAppName != "" {

@@ -19,12 +19,13 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/lakerunner/cli/cmd/aliases"
 	"github.com/lakerunner/cli/cmd/demo"
 	"github.com/lakerunner/cli/cmd/logs"
+	presetsCmd "github.com/lakerunner/cli/cmd/presets"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
-
 
 var rootCmd = &cobra.Command{
 	Use:   "lakerunner",
@@ -48,7 +49,6 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
-
 func init() {
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress informational output")
@@ -58,4 +58,6 @@ func init() {
 
 	rootCmd.AddCommand(logs.LogsCmd)
 	rootCmd.AddCommand(demo.DemoCmd)
+	rootCmd.AddCommand(presetsCmd.PresetsCmd)
+	rootCmd.AddCommand(aliases.AliasesCmd)
 }

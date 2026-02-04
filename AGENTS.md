@@ -81,6 +81,7 @@ These can be overridden with command-line flags `--endpoint` and `--api-key`.
 
 - Uses Cobra for CLI structure with nested subcommands
 - Configuration precedence: CLI flags > environment variables > .env file
+- Presets: named filter sets in `~/.lakerunner/config.yaml`, usable via `--preset`/`-p` on log query commands. Preset filters are applied first, then inline `--filter` values are appended.
 - Automatic color disabling on Windows and non-terminal environments
 - Standard Go project layout with internal packages
 
