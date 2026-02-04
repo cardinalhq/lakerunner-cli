@@ -24,15 +24,19 @@ import (
 	"github.com/cardinalhq/oteltools/pkg/dateutils"
 	"github.com/lakerunner/cli/internal/api"
 	"github.com/lakerunner/cli/internal/config"
+	"github.com/lakerunner/cli/internal/presets"
 	"github.com/spf13/cobra"
 )
 
 var (
-	attributesFilters   []string
-	attributesStartTime string
-	attributesEndTime   string
-	attributesAppName   string
-	attributesLogLevel  string
+	attributesFilters    []string
+	attributesPreset     string
+	attributesStartTime  string
+	attributesEndTime    string
+	attributesAppName    string
+	attributesLogLevel   string
+	attrAliasValues      map[string]*string
+	tagValuesAliasValues map[string]*string
 )
 
 var AttributesCmd = &cobra.Command{
@@ -53,16 +57,20 @@ var TagValuesCmd = &cobra.Command{
 
 func init() {
 	AttributesCmd.Flags().StringSliceVarP(&attributesFilters, "filter", "f", []string{}, "Filter in format 'key:value' (can be used multiple times)")
+	AttributesCmd.Flags().StringVarP(&attributesPreset, "preset", "p", "", "Use a named filter preset from ~/.lakerunner/config.yaml")
 	AttributesCmd.Flags().StringVarP(&attributesStartTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	AttributesCmd.Flags().StringVarP(&attributesEndTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	AttributesCmd.Flags().StringVarP(&attributesAppName, "app", "a", "", "Filter by application/service name")
 	AttributesCmd.Flags().StringVarP(&attributesLogLevel, "level", "l", "", "Filter by log level (e.g., ERROR, INFO, DEBUG, WARN)")
 
 	TagValuesCmd.Flags().StringSliceVarP(&attributesFilters, "filter", "f", []string{}, "Filter in format 'key:value' (can be used multiple times)")
+	TagValuesCmd.Flags().StringVarP(&attributesPreset, "preset", "p", "", "Use a named filter preset from ~/.lakerunner/config.yaml")
 	TagValuesCmd.Flags().StringVarP(&attributesStartTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	TagValuesCmd.Flags().StringVarP(&attributesEndTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	TagValuesCmd.Flags().StringVarP(&attributesAppName, "app", "a", "", "Filter by application/service name")
 	TagValuesCmd.Flags().StringVarP(&attributesLogLevel, "level", "l", "", "Filter by log level (e.g., ERROR, INFO, DEBUG, WARN)")
+	attrAliasValues = presets.RegisterAliasFlags(AttributesCmd)
+	tagValuesAliasValues = presets.RegisterAliasFlags(TagValuesCmd)
 }
 
 func runAttributesCmd(cmdObj *cobra.Command, _ []string) error {
@@ -146,6 +154,25 @@ func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
+	// Load preset filters if specified
+	allFilters := attributesFilters
+	if attributesPreset != "" {
+		presetFilters, err := presets.GetFilters(attributesPreset)
+		if err != nil {
+			return err
+		}
+		allFilters = append(presetFilters, attributesFilters...)
+	}
+
+	// Resolve filter aliases in -f values
+	allFilters, err = presets.ResolveFilters(allFilters)
+	if err != nil {
+		return err
+	}
+
+	// Collect filters from alias flags (e.g., -i prod)
+	allFilters = append(allFilters, presets.CollectAliasFilters(tagValuesAliasValues)...)
+
 	var conditions []string
 	if attributesAppName != "" {
 		conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, normalizeTag(attributesAppName)))
@@ -153,7 +180,7 @@ func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
 	if attributesLogLevel != "" {
 		conditions = append(conditions, fmt.Sprintf(`_cardinalhq_level="%s"`, normalizeTag(attributesLogLevel)))
 	}
-	for _, f := range attributesFilters {
+	for _, f := range allFilters {
 		if parts := strings.SplitN(f, ":", 2); len(parts) == 2 {
 			key := normalizeTag(parts[0])
 			val := normalizeTag(parts[1])
