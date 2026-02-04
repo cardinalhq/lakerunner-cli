@@ -75,6 +75,7 @@ These can be overridden with command-line flags `--endpoint` and `--api-key`.
   - `config/`: Configuration management with environment variable loading
   - `api/`: API client functionality
   - `github/`: GitHub integration
+  - `presets/`: Named filter presets loaded from `~/.lakerunner/config.yaml`
 
 ### Key Patterns
 
