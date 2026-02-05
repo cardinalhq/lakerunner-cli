@@ -249,7 +249,7 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 
 		// Get timestamp with proper precision handling
 		timestamp := ""
-		if tsns, ok := message["tsns"].(int64); ok {
+		if tsns, ok := message["timestamp_ns"].(int64); ok {
 			timestamp = time.Unix(0, tsns).Format("2006-01-02 15:04:05.999999999")
 		} else if ts, ok := message["timestamp"].(int64); ok {
 			timestamp = time.UnixMilli(ts).Format("2006-01-02 15:04:05.000")

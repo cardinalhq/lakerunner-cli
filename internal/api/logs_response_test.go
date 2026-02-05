@@ -53,12 +53,12 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			},
 		},
 		{
-			name: "tsns as integer nanoseconds",
+			name: "timestamp_ns as integer nanoseconds",
 			jsonData: `{
 				"id": "test-2",
 				"type": "event",
 				"data": {
-					"tsns": 1704067200123456789,
+					"timestamp_ns": 1704067200123456789,
 					"tags": {
 						"level": "DEBUG"
 					}
@@ -68,7 +68,7 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 				ID:   "test-2",
 				Type: "event",
 				Data: map[string]any{
-					"tsns": int64(1704067200123456789),
+					"timestamp_ns": int64(1704067200123456789),
 					"tags": map[string]any{
 						"level": "DEBUG",
 					},
@@ -76,13 +76,13 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 			},
 		},
 		{
-			name: "both timestamp and tsns present",
+			name: "both timestamp and timestamp_ns present",
 			jsonData: `{
 				"id": "test-3",
 				"type": "timeseries",
 				"data": {
 					"timestamp": 1704067200000,
-					"tsns": 1704067200123456789,
+					"timestamp_ns": 1704067200123456789,
 					"value": 42.5
 				}
 			}`,
@@ -90,9 +90,9 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 				ID:   "test-3",
 				Type: "timeseries",
 				Data: map[string]any{
-					"timestamp": int64(1704067200000),
-					"tsns":      int64(1704067200123456789),
-					"value":     42.5,
+					"timestamp":    int64(1704067200000),
+					"timestamp_ns": int64(1704067200123456789),
+					"value":        42.5,
 				},
 			},
 		},
@@ -122,15 +122,15 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 				"type": "event",
 				"data": {
 					"timestamp": 9999999999999,
-					"tsns": 9223372036854775807
+					"timestamp_ns": 9223372036854775807
 				}
 			}`,
 			want: LogsResponse{
 				ID:   "test-5",
 				Type: "event",
 				Data: map[string]any{
-					"timestamp": int64(9999999999999),
-					"tsns":      int64(9223372036854775807), // max int64
+					"timestamp":    int64(9999999999999),
+					"timestamp_ns": int64(9223372036854775807), // max int64
 				},
 			},
 		},
@@ -195,15 +195,15 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 				"type": "event",
 				"data": {
 					"timestamp": "not-a-number",
-					"tsns": "also-not-a-number"
+					"timestamp_ns": "also-not-a-number"
 				}
 			}`,
 			want: LogsResponse{
 				ID:   "test-9",
 				Type: "event",
 				Data: map[string]any{
-					"timestamp": "not-a-number",
-					"tsns":      "also-not-a-number",
+					"timestamp":    "not-a-number",
+					"timestamp_ns": "also-not-a-number",
 				},
 			},
 		},
@@ -214,15 +214,15 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 				"type": "event",
 				"data": {
 					"timestamp": -1704067200000,
-					"tsns": -1704067200123456789
+					"timestamp_ns": -1704067200123456789
 				}
 			}`,
 			want: LogsResponse{
 				ID:   "test-10",
 				Type: "event",
 				Data: map[string]any{
-					"timestamp": int64(-1704067200000),
-					"tsns":      int64(-1704067200123456789),
+					"timestamp":    int64(-1704067200000),
+					"timestamp_ns": int64(-1704067200123456789),
 				},
 			},
 		},
@@ -258,9 +258,9 @@ func TestLogsResponse_UnmarshalJSON(t *testing.T) {
 								t.Errorf("    timestamp: got %T(%v), want %T(%v)", gotTS, gotTS, wantTS, wantTS)
 							}
 						}
-						if gotTS, ok := got.Data["tsns"]; ok {
-							if wantTS, wok := tt.want.Data["tsns"]; wok {
-								t.Errorf("    tsns: got %T(%v), want %T(%v)", gotTS, gotTS, wantTS, wantTS)
+						if gotTS, ok := got.Data["timestamp_ns"]; ok {
+							if wantTS, wok := tt.want.Data["timestamp_ns"]; wok {
+								t.Errorf("    timestamp_ns: got %T(%v), want %T(%v)", gotTS, gotTS, wantTS, wantTS)
 							}
 						}
 					}
@@ -278,7 +278,7 @@ func TestLogsResponse_TimestampPrecision(t *testing.T) {
 		"type": "event",
 		"data": {
 			"timestamp": 9223372036854775807,
-			"tsns": 9223372036854775807
+			"timestamp_ns": 9223372036854775807
 		}
 	}`
 
@@ -292,8 +292,8 @@ func TestLogsResponse_TimestampPrecision(t *testing.T) {
 		t.Errorf("timestamp precision lost: got %v (%T), want %v", got.Data["timestamp"], got.Data["timestamp"], maxInt64)
 	}
 
-	if ts, ok := got.Data["tsns"].(int64); !ok || ts != maxInt64 {
-		t.Errorf("tsns precision lost: got %v (%T), want %v", got.Data["tsns"], got.Data["tsns"], maxInt64)
+	if ts, ok := got.Data["timestamp_ns"].(int64); !ok || ts != maxInt64 {
+		t.Errorf("timestamp_ns precision lost: got %v (%T), want %v", got.Data["timestamp_ns"], got.Data["timestamp_ns"], maxInt64)
 	}
 }
 

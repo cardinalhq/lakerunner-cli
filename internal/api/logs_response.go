@@ -55,7 +55,7 @@ func (lr *LogsResponse) UnmarshalJSON(data []byte) error {
 
 		// Process each field
 		for key, rawValue := range tempMap {
-			if key == "timestamp" || key == "tsns" {
+			if key == "timestamp" || key == "timestamp_ns" {
 				// Try to unmarshal as int64 first
 				var intVal int64
 				if err := json.Unmarshal(rawValue, &intVal); err == nil {
