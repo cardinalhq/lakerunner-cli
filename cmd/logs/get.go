@@ -167,7 +167,7 @@ var (
 	messageRegexMatch  string
 	messageRegexNot    string
 	getAliasValues     map[string]*string
-	reverseOrder       bool
+	orderFlag          string
 	rawQuery           string
 	outputFormat       string
 )
@@ -185,7 +185,7 @@ func init() {
 	GetCmd.Flags().StringVarP(&messageNotContains, "not-contains", "N", "", "Filter logs where message does not contain this string (!=)")
 	GetCmd.Flags().StringVarP(&messageRegexMatch, "msg-regex", "R", "", "Filter logs where message matches this regex (|~)")
 	GetCmd.Flags().StringVarP(&messageRegexNot, "msg-not-regex", "X", "", "Filter logs where message does not match this regex (!~)")
-	GetCmd.Flags().BoolVar(&reverseOrder, "reverse", true, "Show newest logs first; use --reverse=false for oldest first")
+	GetCmd.Flags().StringVar(&orderFlag, "order", "newest", "Log ordering: newest or oldest")
 	GetCmd.Flags().StringVar(&rawQuery, "query", "", "Raw LogQL query (bypasses filter flags)")
 	GetCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format: text, json, csv, tsv")
 	getAliasValues = presets.RegisterAliasFlags(GetCmd)
@@ -207,6 +207,18 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		// valid
 	default:
 		return fmt.Errorf("invalid output format %q: must be one of text, json, csv, tsv", outputFormat)
+	}
+
+	// Validate and convert order flag
+	orderFlag = strings.ToLower(orderFlag)
+	var reverseOrder bool
+	switch orderFlag {
+	case "newest":
+		reverseOrder = true
+	case "oldest":
+		reverseOrder = false
+	default:
+		return fmt.Errorf("invalid order %q: must be newest or oldest", orderFlag)
 	}
 
 	var selectedColumns []string

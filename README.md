@@ -111,7 +111,7 @@ lakerunner logs get -f "environment:prod" -f "region:us-west-2"
 lakerunner logs get --limit 5000
 
 # Oldest first instead of newest first
-lakerunner logs get --reverse=false
+lakerunner logs get --order=oldest
 ```
 
 ---
@@ -261,7 +261,7 @@ A few real-world examples:
 lakerunner logs get -l ERROR -f "environment:prod" -o json
 
 # Debug what happened around a specific time
-lakerunner logs get -s 2024-01-15T14:30:00Z -e 2024-01-15T14:35:00Z --reverse=false
+lakerunner logs get -s 2024-01-15T14:30:00Z -e 2024-01-15T14:35:00Z --order=oldest
 
 # Export a day of logs to CSV for analysis
 lakerunner logs get -s e-24h --limit 50000 -o csv > yesterday.csv
@@ -270,5 +270,5 @@ lakerunner logs get -s e-24h --limit 50000 -o csv > yesterday.csv
 lakerunner logs get -M "duration_ms" -R "duration_ms=[0-9]{4,}" -o json | jq '.message'
 
 # Tail-like behavior (oldest first, watch for new logs)
-lakerunner logs get -s e-5m --reverse=false
+lakerunner logs get -s e-5m --order=oldest
 ```
