@@ -548,8 +548,11 @@ func TestCSVEscapingWithRealMessages(t *testing.T) {
 		"Multi\nline\nmessage",
 	}
 
-	for _, msg := range messagesWithSpecialChars {
-		t.Run(msg[:min(20, len(msg))], func(t *testing.T) {
+	for i, msg := range messagesWithSpecialChars {
+		// Sanitize test name by replacing newlines with spaces
+		testName := strings.ReplaceAll(msg[:min(20, len(msg))], "\n", " ")
+		t.Run(testName, func(t *testing.T) {
+			_ = i // use index to silence linter if needed
 			escaped := escapeCSV(msg, ",")
 			// If the original had special chars, it should be quoted
 			if strings.ContainsAny(msg, ",\"\n\r") {

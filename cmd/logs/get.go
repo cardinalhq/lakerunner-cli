@@ -71,12 +71,13 @@ func normalizeTag(s string) string {
 func getFieldValue(message map[string]any, tags map[string]any, field string) string {
 	switch strings.ToLower(field) {
 	case "timestamp", "ts":
+		// Prefer nanoseconds for highest precision
 		if tsns, ok := message["timestamp_ns"].(int64); ok {
 			return time.Unix(0, tsns).Format("2006-01-02 15:04:05.999999999")
 		} else if ts, ok := message["timestamp"].(int64); ok {
 			return time.UnixMilli(ts).Format("2006-01-02 15:04:05.000")
 		} else if ts, ok := message["timestamp"].(float64); ok {
-			return time.Unix(int64(ts)/1000, 0).Format("2006-01-02 15:04:05")
+			return time.UnixMilli(int64(ts)).Format("2006-01-02 15:04:05.000")
 		}
 		return ""
 	case "level":
@@ -144,7 +145,11 @@ func formatJSONEntry(message map[string]any, tags map[string]any, cols []string)
 	for _, col := range cols {
 		output[col] = getFieldValue(message, tags, col)
 	}
-	data, _ := json.Marshal(output)
+	data, err := json.Marshal(output)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to marshal log entry to JSON: %v\n", err)
+		return "{}"
+	}
 	return string(data)
 }
 
@@ -194,6 +199,15 @@ var GetCmd = &cobra.Command{
 
 func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	noColor, _ := cmdObj.Flags().GetBool("no-color")
+
+	// Validate output format
+	outputFormat = strings.ToLower(outputFormat)
+	switch outputFormat {
+	case "text", "json", "csv", "tsv":
+		// valid
+	default:
+		return fmt.Errorf("invalid output format %q: must be one of text, json, csv, tsv", outputFormat)
+	}
 
 	var selectedColumns []string
 	if columns != "" {
@@ -389,14 +403,14 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 			}
 			fmt.Println(formatCSVRow(values, "\t"))
 		default: // text
-			// Get timestamp with proper precision handling
+			// Get timestamp with proper precision handling (prefer nanoseconds)
 			timestamp := ""
 			if tsns, ok := message["timestamp_ns"].(int64); ok {
 				timestamp = time.Unix(0, tsns).Format("2006-01-02 15:04:05.999999999")
 			} else if ts, ok := message["timestamp"].(int64); ok {
 				timestamp = time.UnixMilli(ts).Format("2006-01-02 15:04:05.000")
 			} else if ts, ok := message["timestamp"].(float64); ok {
-				timestamp = time.Unix(int64(ts)/1000, 0).Format("2006-01-02 15:04:05")
+				timestamp = time.UnixMilli(int64(ts)).Format("2006-01-02 15:04:05.000")
 			}
 
 			logMessage := ""
@@ -459,6 +473,8 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 							} else {
 								val = "<undefined>"
 							}
+						} else {
+							val = "<undefined>"
 						}
 					}
 					parts = append(parts, val)
