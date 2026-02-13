@@ -501,6 +501,59 @@ func TestGetColorForLevelDifferentiation(t *testing.T) {
 	}
 }
 
+func TestBuildAppCondition(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "single app",
+			input:    "cartservice",
+			expected: `resource_service_name="cartservice"`,
+		},
+		{
+			name:     "two apps",
+			input:    "cartservice,checkoutservice",
+			expected: `resource_service_name=~"cartservice|checkoutservice"`,
+		},
+		{
+			name:     "three apps",
+			input:    "cartservice,checkoutservice,frontend",
+			expected: `resource_service_name=~"cartservice|checkoutservice|frontend"`,
+		},
+		{
+			name:     "apps with spaces",
+			input:    "cartservice, checkoutservice, frontend",
+			expected: `resource_service_name=~"cartservice|checkoutservice|frontend"`,
+		},
+		{
+			name:     "single app with dots",
+			input:    "my.service.name",
+			expected: `resource_service_name="my_service_name"`,
+		},
+		{
+			name:     "multiple apps with dots",
+			input:    "my.service,another.service",
+			expected: `resource_service_name=~"my_service|another_service"`,
+		},
+		{
+			name:     "mixed dots and underscores",
+			input:    "cart.service,checkout_service",
+			expected: `resource_service_name=~"cart_service|checkout_service"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildAppCondition(tt.input)
+			if result != tt.expected {
+				t.Errorf("buildAppCondition(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 // Integration-style tests using real API response structures
 func TestFormatRealLogEntries(t *testing.T) {
 	for _, entry := range mockLogEntries {

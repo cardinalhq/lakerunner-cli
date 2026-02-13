@@ -73,6 +73,9 @@ The `e-` prefix means "end minus", so `e-1h` is one hour before the end time.
 # Logs from a specific service
 lakerunner logs get -a cartservice
 
+# Logs from multiple services
+lakerunner logs get -a cartservice,checkoutservice,frontend
+
 # Only errors
 lakerunner logs get -l ERROR
 

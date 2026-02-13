@@ -139,6 +139,22 @@ func formatCSVRow(values []string, delimiter string) string {
 	return strings.Join(escaped, delimiter)
 }
 
+// buildAppCondition builds a LogQL condition for service name filtering
+// Single app: resource_service_name="app"
+// Multiple apps: resource_service_name=~"app1|app2|app3"
+func buildAppCondition(appName string) string {
+	apps := strings.Split(appName, ",")
+	if len(apps) == 1 {
+		return fmt.Sprintf(`resource_service_name="%s"`, normalizeTag(apps[0]))
+	}
+	// Multiple apps: use regex match
+	var normalized []string
+	for _, a := range apps {
+		normalized = append(normalized, normalizeTag(strings.TrimSpace(a)))
+	}
+	return fmt.Sprintf(`resource_service_name=~"%s"`, strings.Join(normalized, "|"))
+}
+
 // formatJSONEntry formats a log entry as JSON
 func formatJSONEntry(message map[string]any, tags map[string]any, cols []string) string {
 	output := make(map[string]any)
@@ -178,7 +194,7 @@ func init() {
 	GetCmd.Flags().StringVarP(&preset, "preset", "p", "", "Use a named filter preset from ~/.lakerunner/config.yaml")
 	GetCmd.Flags().StringVarP(&startTime, "start", "s", "", "Start time (e.g., 'e-1h', '2024-01-01T00:00:00Z')")
 	GetCmd.Flags().StringVarP(&endTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
-	GetCmd.Flags().StringVarP(&appName, "app", "a", "", "Filter logs by application/service name")
+	GetCmd.Flags().StringVarP(&appName, "app", "a", "", "Filter by service name (comma-separated for multiple)")
 	GetCmd.Flags().StringVarP(&logLevel, "level", "l", "", "Filter logs by log level (e.g., ERROR, INFO, DEBUG, WARN)")
 	GetCmd.Flags().StringVarP(&columns, "columns", "c", "", "Comma or space separated columns to display (e.g., 'timestamp,level,message')")
 	GetCmd.Flags().StringVarP(&messageContains, "contains", "M", "", "Filter logs where message contains this string (|=)")
@@ -295,7 +311,7 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	} else {
 		var conditions []string
 		if appName != "" {
-			conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, normalizeTag(appName)))
+			conditions = append(conditions, buildAppCondition(appName))
 		}
 		if logLevel != "" {
 			conditions = append(conditions, fmt.Sprintf(`log_level="%s"`, normalizeTag(logLevel)))
