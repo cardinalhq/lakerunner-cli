@@ -155,6 +155,45 @@ func buildAppCondition(appName string) string {
 	return fmt.Sprintf(`resource_service_name=~"%s"`, strings.Join(normalized, "|"))
 }
 
+// buildLogQLQuery constructs a LogQL query from filter parameters
+func buildLogQLQuery(appName, logLevel string, filters []string, messageContains, messageNotContains, messageRegexMatch, messageRegexNot string) string {
+	var conditions []string
+	if appName != "" {
+		conditions = append(conditions, buildAppCondition(appName))
+	}
+	if logLevel != "" {
+		conditions = append(conditions, fmt.Sprintf(`log_level="%s"`, normalizeTag(logLevel)))
+	}
+	for _, f := range filters {
+		parts := strings.SplitN(f, ":", 2)
+		if len(parts) == 2 {
+			key := normalizeTag(parts[0])
+			val := normalizeTag(parts[1])
+			conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, val))
+		}
+	}
+
+	q := `{resource_service_name=~".+"}`
+	if len(conditions) > 0 {
+		q = "{" + strings.Join(conditions, ", ") + "}"
+	}
+
+	if messageContains != "" {
+		q += fmt.Sprintf(` |= "%s"`, normalizeTag(messageContains))
+	}
+	if messageNotContains != "" {
+		q += fmt.Sprintf(` != "%s"`, normalizeTag(messageNotContains))
+	}
+	if messageRegexMatch != "" {
+		q += fmt.Sprintf(` |~ "%s"`, normalizeTag(messageRegexMatch))
+	}
+	if messageRegexNot != "" {
+		q += fmt.Sprintf(` !~ "%s"`, normalizeTag(messageRegexNot))
+	}
+
+	return q
+}
+
 // formatJSONEntry formats a log entry as JSON
 func formatJSONEntry(message map[string]any, tags map[string]any, cols []string) string {
 	output := make(map[string]any)
@@ -309,39 +348,7 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 			fmt.Fprintln(os.Stderr, "Warning: --query specified, filter flags will be ignored")
 		}
 	} else {
-		var conditions []string
-		if appName != "" {
-			conditions = append(conditions, buildAppCondition(appName))
-		}
-		if logLevel != "" {
-			conditions = append(conditions, fmt.Sprintf(`log_level="%s"`, normalizeTag(logLevel)))
-		}
-		for _, f := range allFilters {
-			parts := strings.SplitN(f, ":", 2)
-			if len(parts) == 2 {
-				key := normalizeTag(parts[0])
-				val := normalizeTag(parts[1])
-				conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, val))
-			}
-		}
-
-		q = `{resource_service_name=~".+"}`
-		if len(conditions) > 0 {
-			q = "{" + strings.Join(conditions, ", ") + "}"
-		}
-
-		if messageContains != "" {
-			q += fmt.Sprintf(` |= "%s"`, normalizeTag(messageContains))
-		}
-		if messageNotContains != "" {
-			q += fmt.Sprintf(` != "%s"`, normalizeTag(messageNotContains))
-		}
-		if messageRegexMatch != "" {
-			q += fmt.Sprintf(` |~ "%s"`, normalizeTag(messageRegexMatch))
-		}
-		if messageRegexNot != "" {
-			q += fmt.Sprintf(` !~ "%s"`, normalizeTag(messageRegexNot))
-		}
+		q = buildLogQLQuery(appName, logLevel, allFilters, messageContains, messageNotContains, messageRegexMatch, messageRegexNot)
 	}
 
 	// Context with timeout

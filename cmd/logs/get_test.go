@@ -501,6 +501,118 @@ func TestGetColorForLevelDifferentiation(t *testing.T) {
 	}
 }
 
+func TestBuildLogQLQuery(t *testing.T) {
+	tests := []struct {
+		name              string
+		appName           string
+		logLevel          string
+		filters           []string
+		messageContains   string
+		messageNotContains string
+		messageRegexMatch string
+		messageRegexNot   string
+		expected          string
+	}{
+		{
+			name:     "no filters",
+			expected: `{resource_service_name=~".+"}`,
+		},
+		{
+			name:     "single app",
+			appName:  "cartservice",
+			expected: `{resource_service_name="cartservice"}`,
+		},
+		{
+			name:     "multiple apps",
+			appName:  "cartservice,checkoutservice",
+			expected: `{resource_service_name=~"cartservice|checkoutservice"}`,
+		},
+		{
+			name:     "multiple apps with spaces",
+			appName:  "cartservice, checkoutservice, frontend",
+			expected: `{resource_service_name=~"cartservice|checkoutservice|frontend"}`,
+		},
+		{
+			name:     "app and level",
+			appName:  "cartservice",
+			logLevel: "ERROR",
+			expected: `{resource_service_name="cartservice", log_level="ERROR"}`,
+		},
+		{
+			name:     "multiple apps and level",
+			appName:  "cartservice,checkoutservice",
+			logLevel: "ERROR",
+			expected: `{resource_service_name=~"cartservice|checkoutservice", log_level="ERROR"}`,
+		},
+		{
+			name:     "level only",
+			logLevel: "WARN",
+			expected: `{log_level="WARN"}`,
+		},
+		{
+			name:    "custom filter",
+			filters: []string{"environment:prod"},
+			expected: `{environment="prod"}`,
+		},
+		{
+			name:     "app with custom filters",
+			appName:  "cartservice",
+			filters:  []string{"environment:prod", "region:us-west-2"},
+			expected: `{resource_service_name="cartservice", environment="prod", region="us-west-2"}`,
+		},
+		{
+			name:            "message contains",
+			appName:         "cartservice",
+			messageContains: "error",
+			expected:        `{resource_service_name="cartservice"} |= "error"`,
+		},
+		{
+			name:               "message not contains",
+			appName:            "cartservice",
+			messageNotContains: "health",
+			expected:           `{resource_service_name="cartservice"} != "health"`,
+		},
+		{
+			name:              "message regex match",
+			appName:           "cartservice",
+			messageRegexMatch: "user_id=\\d+",
+			expected:          `{resource_service_name="cartservice"} |~ "user_id=\d+"`,
+		},
+		{
+			name:            "message regex not",
+			appName:         "cartservice",
+			messageRegexNot: "DEBUG|TRACE",
+			expected:        `{resource_service_name="cartservice"} !~ "DEBUG|TRACE"`,
+		},
+		{
+			name:               "all message filters",
+			appName:            "cartservice",
+			messageContains:    "request",
+			messageNotContains: "health",
+			messageRegexMatch:  "status=\\d+",
+			messageRegexNot:    "DEBUG",
+			expected:           `{resource_service_name="cartservice"} |= "request" != "health" |~ "status=\d+" !~ "DEBUG"`,
+		},
+		{
+			name:     "full complex query",
+			appName:  "cartservice,checkoutservice",
+			logLevel: "ERROR",
+			filters:  []string{"environment:prod"},
+			messageContains: "timeout",
+			expected: `{resource_service_name=~"cartservice|checkoutservice", log_level="ERROR", environment="prod"} |= "timeout"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := buildLogQLQuery(tt.appName, tt.logLevel, tt.filters, tt.messageContains, tt.messageNotContains, tt.messageRegexMatch, tt.messageRegexNot)
+			if result != tt.expected {
+				t.Errorf("buildLogQLQuery() =\n  %q\nwant:\n  %q", result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestBuildAppCondition(t *testing.T) {
 	tests := []struct {
 		name     string
