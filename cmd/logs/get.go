@@ -16,6 +16,7 @@ package logs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -66,6 +67,87 @@ func normalizeTag(s string) string {
 	return strings.ReplaceAll(s, ".", "_")
 }
 
+// getFieldValue extracts a field value from a log entry
+func getFieldValue(message map[string]any, tags map[string]any, field string) string {
+	switch strings.ToLower(field) {
+	case "timestamp", "ts":
+		if tsns, ok := message["timestamp_ns"].(int64); ok {
+			return time.Unix(0, tsns).Format("2006-01-02 15:04:05.999999999")
+		} else if ts, ok := message["timestamp"].(int64); ok {
+			return time.UnixMilli(ts).Format("2006-01-02 15:04:05.000")
+		} else if ts, ok := message["timestamp"].(float64); ok {
+			return time.Unix(int64(ts)/1000, 0).Format("2006-01-02 15:04:05")
+		}
+		return ""
+	case "level":
+		if tags != nil {
+			if level, ok := tags["log_level"].(string); ok {
+				return level
+			}
+		}
+		return ""
+	case "message":
+		if tags != nil {
+			if msg, ok := tags["log_message"].(string); ok {
+				return msg
+			}
+		}
+		return ""
+	case "service", "svc":
+		if tags != nil {
+			if service, ok := tags["resource_service_name"].(string); ok {
+				return service
+			}
+		}
+		return ""
+	case "pod":
+		if tags != nil {
+			if pod, ok := tags["resource_k8s_pod_name"].(string); ok {
+				return pod
+			}
+		}
+		return ""
+	default:
+		if tags != nil {
+			colNorm := normalizeTag(field)
+			if v, ok := tags[field]; ok {
+				return fmt.Sprintf("%v", v)
+			} else if v, ok := tags[colNorm]; ok {
+				return fmt.Sprintf("%v", v)
+			}
+		}
+		return ""
+	}
+}
+
+// escapeCSV escapes a value for CSV/TSV output
+func escapeCSV(val string, delimiter string) string {
+	needsQuote := strings.ContainsAny(val, "\",\n\r"+delimiter)
+	if needsQuote {
+		return `"` + strings.ReplaceAll(val, `"`, `""`) + `"`
+	}
+	return val
+}
+
+// formatCSVRow formats a row for CSV/TSV output
+func formatCSVRow(values []string, delimiter string) string {
+	escaped := make([]string, len(values))
+	for i, v := range values {
+		escaped[i] = escapeCSV(v, delimiter)
+	}
+	return strings.Join(escaped, delimiter)
+}
+
+// formatJSONEntry formats a log entry as JSON
+func formatJSONEntry(message map[string]any, tags map[string]any, cols []string) string {
+	output := make(map[string]any)
+	for _, col := range cols {
+		output[col] = getFieldValue(message, tags, col)
+	}
+	data, _ := json.Marshal(output)
+	return string(data)
+}
+
 var (
 	limit              int
 	filters            []string
@@ -80,6 +162,9 @@ var (
 	messageRegexMatch  string
 	messageRegexNot    string
 	getAliasValues     map[string]*string
+	reverseOrder       bool
+	rawQuery           string
+	outputFormat       string
 )
 
 func init() {
@@ -95,6 +180,9 @@ func init() {
 	GetCmd.Flags().StringVarP(&messageNotContains, "not-contains", "N", "", "Filter logs where message does not contain this string (!=)")
 	GetCmd.Flags().StringVarP(&messageRegexMatch, "msg-regex", "R", "", "Filter logs where message matches this regex (|~)")
 	GetCmd.Flags().StringVarP(&messageRegexNot, "msg-not-regex", "X", "", "Filter logs where message does not match this regex (!~)")
+	GetCmd.Flags().BoolVar(&reverseOrder, "reverse", true, "Show newest logs first; use --reverse=false for oldest first")
+	GetCmd.Flags().StringVar(&rawQuery, "query", "", "Raw LogQL query (bypasses filter flags)")
+	GetCmd.Flags().StringVarP(&outputFormat, "output", "o", "text", "Output format: text, json, csv, tsv")
 	getAliasValues = presets.RegisterAliasFlags(GetCmd)
 }
 
@@ -167,50 +255,77 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	allFilters = append(allFilters, presets.CollectAliasFilters(getAliasValues)...)
 
 	// Build LogQL query string
-	var conditions []string
-	if appName != "" {
-		conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, normalizeTag(appName)))
-	}
-	if logLevel != "" {
-		conditions = append(conditions, fmt.Sprintf(`log_level="%s"`, normalizeTag(logLevel)))
-	}
-	for _, f := range allFilters {
-		parts := strings.SplitN(f, ":", 2)
-		if len(parts) == 2 {
-			key := normalizeTag(parts[0])
-			val := normalizeTag(parts[1])
-			conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, val))
+	var q string
+	if rawQuery != "" {
+		// Use raw query directly
+		q = rawQuery
+		// Warn if filter flags are also set
+		hasFilterFlags := appName != "" || logLevel != "" || len(allFilters) > 0 ||
+			messageContains != "" || messageNotContains != "" ||
+			messageRegexMatch != "" || messageRegexNot != ""
+		if hasFilterFlags {
+			fmt.Fprintln(os.Stderr, "Warning: --query specified, filter flags will be ignored")
 		}
-	}
+	} else {
+		var conditions []string
+		if appName != "" {
+			conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, normalizeTag(appName)))
+		}
+		if logLevel != "" {
+			conditions = append(conditions, fmt.Sprintf(`log_level="%s"`, normalizeTag(logLevel)))
+		}
+		for _, f := range allFilters {
+			parts := strings.SplitN(f, ":", 2)
+			if len(parts) == 2 {
+				key := normalizeTag(parts[0])
+				val := normalizeTag(parts[1])
+				conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, val))
+			}
+		}
 
-	q := `{resource_service_name=~".+"}`
-	if len(conditions) > 0 {
-		q = "{" + strings.Join(conditions, ", ") + "}"
-	}
+		q = `{resource_service_name=~".+"}`
+		if len(conditions) > 0 {
+			q = "{" + strings.Join(conditions, ", ") + "}"
+		}
 
-	if messageContains != "" {
-		q += fmt.Sprintf(` |= "%s"`, normalizeTag(messageContains))
-	}
-	if messageNotContains != "" {
-		q += fmt.Sprintf(` != "%s"`, normalizeTag(messageNotContains))
-	}
-	if messageRegexMatch != "" {
-		q += fmt.Sprintf(` |~ "%s"`, normalizeTag(messageRegexMatch))
-	}
-	if messageRegexNot != "" {
-		q += fmt.Sprintf(` !~ "%s"`, normalizeTag(messageRegexNot))
+		if messageContains != "" {
+			q += fmt.Sprintf(` |= "%s"`, normalizeTag(messageContains))
+		}
+		if messageNotContains != "" {
+			q += fmt.Sprintf(` != "%s"`, normalizeTag(messageNotContains))
+		}
+		if messageRegexMatch != "" {
+			q += fmt.Sprintf(` |~ "%s"`, normalizeTag(messageRegexMatch))
+		}
+		if messageRegexNot != "" {
+			q += fmt.Sprintf(` !~ "%s"`, normalizeTag(messageRegexNot))
+		}
 	}
 
 	// Context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	responseChan, err := client.QueryLogs(ctx, q, startTimeStr, endTimeStr, limit, true, fields)
+	responseChan, err := client.QueryLogs(ctx, q, startTimeStr, endTimeStr, limit, reverseOrder, fields)
 	if err != nil {
 		return fmt.Errorf("failed to query logs: %w", err)
 	}
 
 	quiet, _ := cmdObj.Flags().GetBool("quiet")
+
+	// Structured output formats disable colors and progress indicators
+	isStructuredOutput := outputFormat == "json" || outputFormat == "csv" || outputFormat == "tsv"
+	if isStructuredOutput {
+		noColor = true
+		quiet = true
+	}
+
+	// Default columns for structured output
+	outputColumns := selectedColumns
+	if len(outputColumns) == 0 && isStructuredOutput {
+		outputColumns = []string{"timestamp", "level", "service", "message"}
+	}
+
 	if !quiet {
 		fmt.Printf("Querying logs from %s to %s...\n", startTimeStr, endTimeStr)
 		fmt.Printf("LogQL: %s\n", q)
@@ -226,6 +341,7 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 
 	responseCount := 0
 	started := time.Now()
+	headerPrinted := false
 
 	if !quiet {
 		progressTicker := time.NewTicker(2 * time.Second)
@@ -246,92 +362,118 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 			fmt.Fprintf(os.Stderr, "\r%s\r", strings.Repeat(" ", 50))
 		}
 		message := response.Data
+		tags, _ := message["tags"].(map[string]any)
 
-		// Get timestamp with proper precision handling
-		timestamp := ""
-		if tsns, ok := message["timestamp_ns"].(int64); ok {
-			timestamp = time.Unix(0, tsns).Format("2006-01-02 15:04:05.999999999")
-		} else if ts, ok := message["timestamp"].(int64); ok {
-			timestamp = time.UnixMilli(ts).Format("2006-01-02 15:04:05.000")
-		} else if ts, ok := message["timestamp"].(float64); ok {
-			timestamp = time.Unix(int64(ts)/1000, 0).Format("2006-01-02 15:04:05")
-		}
+		// Handle structured output formats
+		switch outputFormat {
+		case "json":
+			fmt.Println(formatJSONEntry(message, tags, outputColumns))
+		case "csv":
+			if !headerPrinted {
+				fmt.Println(formatCSVRow(outputColumns, ","))
+				headerPrinted = true
+			}
+			values := make([]string, len(outputColumns))
+			for i, col := range outputColumns {
+				values[i] = getFieldValue(message, tags, col)
+			}
+			fmt.Println(formatCSVRow(values, ","))
+		case "tsv":
+			if !headerPrinted {
+				fmt.Println(formatCSVRow(outputColumns, "\t"))
+				headerPrinted = true
+			}
+			values := make([]string, len(outputColumns))
+			for i, col := range outputColumns {
+				values[i] = getFieldValue(message, tags, col)
+			}
+			fmt.Println(formatCSVRow(values, "\t"))
+		default: // text
+			// Get timestamp with proper precision handling
+			timestamp := ""
+			if tsns, ok := message["timestamp_ns"].(int64); ok {
+				timestamp = time.Unix(0, tsns).Format("2006-01-02 15:04:05.999999999")
+			} else if ts, ok := message["timestamp"].(int64); ok {
+				timestamp = time.UnixMilli(ts).Format("2006-01-02 15:04:05.000")
+			} else if ts, ok := message["timestamp"].(float64); ok {
+				timestamp = time.Unix(int64(ts)/1000, 0).Format("2006-01-02 15:04:05")
+			}
 
-		logMessage := ""
-		serviceName := ""
-		levelVal := ""
-		podName := ""
-		tags, _ := message["tags"].(map[string]interface{})
-		if tags != nil {
-			if msg, ok := tags["log_message"].(string); ok {
-				logMessage = msg
+			logMessage := ""
+			serviceName := ""
+			levelVal := ""
+			podName := ""
+			if tags != nil {
+				if msg, ok := tags["log_message"].(string); ok {
+					logMessage = msg
+				}
+				if service, ok := tags["resource_service_name"].(string); ok {
+					serviceName = service
+				}
+				if level, ok := tags["log_level"].(string); ok {
+					levelVal = level
+				}
+				if pod, ok := tags["resource_k8s_pod_name"].(string); ok {
+					podName = pod
+				}
 			}
-			if service, ok := tags["resource_service_name"].(string); ok {
-				serviceName = service
-			}
-			if level, ok := tags["log_level"].(string); ok {
-				levelVal = level
-			}
-			if pod, ok := tags["resource_k8s_pod_name"].(string); ok {
-				podName = pod
-			}
-		}
 
-		if len(selectedColumns) > 0 {
-			var parts []string
-			for _, col := range selectedColumns {
-				val := ""
-				switch strings.ToLower(col) {
-				case "timestamp", "ts":
-					if noColor {
-						val = timestamp
-					} else {
-						val = fmt.Sprintf("%s%s%s", colorBlue, timestamp, colorReset)
-					}
-				case "level":
-					if noColor {
-						val = levelVal
-					} else {
-						val = fmt.Sprintf("%s%s%s", getColorForLevel(levelVal, noColor), levelVal, colorReset)
-					}
-				case "message":
-					val = logMessage
-				case "service", "svc":
-					if noColor {
-						val = serviceName
-					} else {
-						val = fmt.Sprintf("%s%s%s", colorCyan, serviceName, colorReset)
-					}
-				case "pod":
-					if noColor {
-						val = podName
-					} else {
-						val = fmt.Sprintf("%s%s%s", colorPurple, podName, colorReset)
-					}
-				default:
-					if tags != nil {
-						colNorm := normalizeTag(col)
-						if v, ok := tags[col]; ok {
-							val = fmt.Sprintf("%v", v)
-						} else if v, ok := tags[colNorm]; ok {
-							val = fmt.Sprintf("%v", v)
+			if len(selectedColumns) > 0 {
+				var parts []string
+				for _, col := range selectedColumns {
+					val := ""
+					switch strings.ToLower(col) {
+					case "timestamp", "ts":
+						if noColor {
+							val = timestamp
 						} else {
-							val = "<undefined>"
+							val = fmt.Sprintf("%s%s%s", colorBlue, timestamp, colorReset)
+						}
+					case "level":
+						if noColor {
+							val = levelVal
+						} else {
+							val = fmt.Sprintf("%s%s%s", getColorForLevel(levelVal, noColor), levelVal, colorReset)
+						}
+					case "message":
+						val = logMessage
+					case "service", "svc":
+						if noColor {
+							val = serviceName
+						} else {
+							val = fmt.Sprintf("%s%s%s", colorCyan, serviceName, colorReset)
+						}
+					case "pod":
+						if noColor {
+							val = podName
+						} else {
+							val = fmt.Sprintf("%s%s%s", colorPurple, podName, colorReset)
+						}
+					default:
+						if tags != nil {
+							colNorm := normalizeTag(col)
+							if v, ok := tags[col]; ok {
+								val = fmt.Sprintf("%v", v)
+							} else if v, ok := tags[colNorm]; ok {
+								val = fmt.Sprintf("%v", v)
+							} else {
+								val = "<undefined>"
+							}
 						}
 					}
+					parts = append(parts, val)
 				}
-				parts = append(parts, val)
-			}
-			fmt.Println(strings.Join(parts, " "))
-		} else {
-			if noColor {
-				fmt.Printf("[%s] %s %s: %s\n", timestamp, levelVal, serviceName, logMessage)
+				fmt.Println(strings.Join(parts, " "))
 			} else {
-				fmt.Printf("[%s%s%s] %s%s%s %s%s%s: %s\n",
-					colorBlue, timestamp, colorReset,
-					getColorForLevel(levelVal, noColor), levelVal, colorReset,
-					colorCyan, serviceName, colorReset,
-					logMessage)
+				if noColor {
+					fmt.Printf("[%s] %s %s: %s\n", timestamp, levelVal, serviceName, logMessage)
+				} else {
+					fmt.Printf("[%s%s%s] %s%s%s %s%s%s: %s\n",
+						colorBlue, timestamp, colorReset,
+						getColorForLevel(levelVal, noColor), levelVal, colorReset,
+						colorCyan, serviceName, colorReset,
+						logMessage)
+				}
 			}
 		}
 

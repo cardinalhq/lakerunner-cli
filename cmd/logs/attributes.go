@@ -35,7 +35,6 @@ var (
 	attributesEndTime    string
 	attributesAppName    string
 	attributesLogLevel   string
-	attrAliasValues      map[string]*string
 	tagValuesAliasValues map[string]*string
 )
 
@@ -69,7 +68,7 @@ func init() {
 	TagValuesCmd.Flags().StringVarP(&attributesEndTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	TagValuesCmd.Flags().StringVarP(&attributesAppName, "app", "a", "", "Filter by application/service name")
 	TagValuesCmd.Flags().StringVarP(&attributesLogLevel, "level", "l", "", "Filter by log level (e.g., ERROR, INFO, DEBUG, WARN)")
-	attrAliasValues = presets.RegisterAliasFlags(AttributesCmd)
+	presets.RegisterAliasFlags(AttributesCmd)
 	tagValuesAliasValues = presets.RegisterAliasFlags(TagValuesCmd)
 }
 
