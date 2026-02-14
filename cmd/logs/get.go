@@ -144,14 +144,21 @@ func formatCSVRow(values []string, delimiter string) string {
 // Multiple apps: resource_service_name=~"app1|app2|app3"
 func buildAppCondition(appName string) string {
 	apps := strings.Split(appName, ",")
-	if len(apps) == 1 {
-		return fmt.Sprintf(`resource_service_name="%s"`, normalizeTag(apps[0]))
-	}
-	// Multiple apps: use regex match
+	// Filter and normalize app names
 	var normalized []string
 	for _, a := range apps {
-		normalized = append(normalized, normalizeTag(strings.TrimSpace(a)))
+		trimmed := strings.TrimSpace(a)
+		if trimmed != "" {
+			normalized = append(normalized, normalizeTag(trimmed))
+		}
 	}
+	if len(normalized) == 0 {
+		return ""
+	}
+	if len(normalized) == 1 {
+		return fmt.Sprintf(`resource_service_name="%s"`, normalized[0])
+	}
+	// Multiple apps: use regex match
 	return fmt.Sprintf(`resource_service_name=~"%s"`, strings.Join(normalized, "|"))
 }
 
@@ -159,7 +166,9 @@ func buildAppCondition(appName string) string {
 func buildLogQLQuery(appName, logLevel string, filters []string, messageContains, messageNotContains, messageRegexMatch, messageRegexNot string) string {
 	var conditions []string
 	if appName != "" {
-		conditions = append(conditions, buildAppCondition(appName))
+		if cond := buildAppCondition(appName); cond != "" {
+			conditions = append(conditions, cond)
+		}
 	}
 	if logLevel != "" {
 		conditions = append(conditions, fmt.Sprintf(`log_level="%s"`, normalizeTag(logLevel)))
@@ -390,7 +399,13 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 
 	responseCount := 0
 	started := time.Now()
-	headerPrinted := false
+
+	// Print CSV/TSV header before reading responses
+	if outputFormat == "csv" {
+		fmt.Println(formatCSVRow(outputColumns, ","))
+	} else if outputFormat == "tsv" {
+		fmt.Println(formatCSVRow(outputColumns, "\t"))
+	}
 
 	if !quiet {
 		progressTicker := time.NewTicker(2 * time.Second)
@@ -418,20 +433,12 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 		case "json":
 			fmt.Println(formatJSONEntry(message, tags, outputColumns))
 		case "csv":
-			if !headerPrinted {
-				fmt.Println(formatCSVRow(outputColumns, ","))
-				headerPrinted = true
-			}
 			values := make([]string, len(outputColumns))
 			for i, col := range outputColumns {
 				values[i] = getFieldValue(message, tags, col)
 			}
 			fmt.Println(formatCSVRow(values, ","))
 		case "tsv":
-			if !headerPrinted {
-				fmt.Println(formatCSVRow(outputColumns, "\t"))
-				headerPrinted = true
-			}
 			values := make([]string, len(outputColumns))
 			for i, col := range outputColumns {
 				values[i] = getFieldValue(message, tags, col)

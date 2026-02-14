@@ -601,6 +601,17 @@ func TestBuildLogQLQuery(t *testing.T) {
 			messageContains: "timeout",
 			expected: `{resource_service_name=~"cartservice|checkoutservice", log_level="ERROR", environment="prod"} |= "timeout"`,
 		},
+		{
+			name:     "empty app entries ignored",
+			appName:  ",,,",
+			logLevel: "ERROR",
+			expected: `{log_level="ERROR"}`,
+		},
+		{
+			name:     "trailing comma in app",
+			appName:  "cartservice,",
+			expected: `{resource_service_name="cartservice"}`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -622,6 +633,16 @@ func TestBuildAppCondition(t *testing.T) {
 		{
 			name:     "single app",
 			input:    "cartservice",
+			expected: `resource_service_name="cartservice"`,
+		},
+		{
+			name:     "single app with leading space",
+			input:    " cartservice",
+			expected: `resource_service_name="cartservice"`,
+		},
+		{
+			name:     "single app with trailing space",
+			input:    "cartservice ",
 			expected: `resource_service_name="cartservice"`,
 		},
 		{
@@ -653,6 +674,21 @@ func TestBuildAppCondition(t *testing.T) {
 			name:     "mixed dots and underscores",
 			input:    "cart.service,checkout_service",
 			expected: `resource_service_name=~"cart_service|checkout_service"`,
+		},
+		{
+			name:     "trailing comma filtered",
+			input:    "cartservice,",
+			expected: `resource_service_name="cartservice"`,
+		},
+		{
+			name:     "empty entries filtered",
+			input:    "cartservice,,checkoutservice",
+			expected: `resource_service_name=~"cartservice|checkoutservice"`,
+		},
+		{
+			name:     "all empty returns empty",
+			input:    ",,,",
+			expected: ``,
 		},
 	}
 
