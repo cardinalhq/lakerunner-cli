@@ -401,9 +401,10 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 	started := time.Now()
 
 	// Print CSV/TSV header before reading responses
-	if outputFormat == "csv" {
+	switch outputFormat {
+	case "csv":
 		fmt.Println(formatCSVRow(outputColumns, ","))
-	} else if outputFormat == "tsv" {
+	case "tsv":
 		fmt.Println(formatCSVRow(outputColumns, "\t"))
 	}
 
