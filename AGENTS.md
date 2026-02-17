@@ -95,3 +95,12 @@ These can be overridden with command-line flags `--endpoint` and `--api-key`.
 ## Testing
 
 Run `go test -race ./...` to execute all tests with race detection.
+
+## Documentation
+
+The authoritative CLI documentation lives at [docs.cardinalhq.io/lakerunner/cli](https://docs.cardinalhq.io/lakerunner/cli). The README in this repo is intentionally kept minimal and links there.
+
+When adding or changing a CLI feature (new flags, changed defaults, new commands, etc.):
+
+1. Update the docs site to reflect the change. The docs source is in a separate repo. Ask the user where the docs repo is checked out locally.
+2. Do NOT duplicate detailed usage documentation in the README. The README should only contain a brief overview and link to the docs site.
