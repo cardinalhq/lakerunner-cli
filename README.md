@@ -1,20 +1,14 @@
-<p align="center">
-  <img src="assets/lakerunner-chip.png" alt="Lakerunner Logo" width="50" />
-</p>
+# Lakerunner CLI
 
-<h1 align="center">Lakerunner CLI</h1>
+![Lakerunner Logo](assets/lakerunner-chip-small.png)
 
-<p align="center">
-  <em>The intuitive CLI to query your S3 logs</em>
-</p>
+The intuitive CLI to query your S3 logs.
 
-<p align="center">
-  <img src="assets/lrcli.gif" alt="Demo of LakeRunner in action" width="800" />
-</p>
+![Demo of LakeRunner in action](assets/lrcli.gif)
 
 ---
 
-### Why Lakerunner CLI?
+## Why Lakerunner CLI?
 
 - Query your S3 logs on your terms. Fast, flexible, and free.
 - Filter and extract what you need without a web UI getting in the way.
@@ -24,16 +18,11 @@
 
 ## Getting Started
 
-Grab a release from the releases page, or install via brew:
-
-```
-brew tap cardinalhq/lakerunner-cli
-brew install lakerunner-cli
-```
+Grab a release from the [releases page](https://github.com/cardinalhq/lakerunner-cli/releases).
 
 Set your endpoint and API key ([Lakerunner setup guide](https://docs.cardinalhq.io/lakerunner)):
 
-```
+```sh
 export LAKERUNNER_QUERY_URL=http://localhost:7101
 export LAKERUNNER_API_KEY=your-api-key
 ```
@@ -128,7 +117,8 @@ lakerunner logs get
 ```
 
 Output:
-```
+
+```text
 [2024-01-15 10:23:45.123] INFO cartservice: GetCartAsync called
 [2024-01-15 10:23:44.891] ERROR authservice: Connection refused
 ```
