@@ -1,6 +1,6 @@
 module github.com/lakerunner/cli
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/cardinalhq/oteltools v0.32.2
