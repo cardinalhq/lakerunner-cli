@@ -67,7 +67,7 @@ func Load() (*Config, error) {
 }
 
 // ResolveFilters expands any aliased keys in the given filters.
-// A filter "i:prod" with alias i->resource_installation becomes "resource_installation:prod".
+// A filter "i:prod" with alias i->installation becomes "installation:prod".
 func ResolveFilters(filters []string) ([]string, error) {
 	cfg, err := Load()
 	if err != nil {
@@ -91,8 +91,8 @@ func ResolveFilters(filters []string) ([]string, error) {
 }
 
 // RegisterAliasFlags registers user-defined aliases as CLI flags on the given command.
-// Single-char aliases become short flags (e.g., -i for resource_installation).
-// Multi-char aliases become long flags (e.g., --svc for resource_service_name).
+// Single-char aliases become short flags (e.g., -i for installation).
+// Multi-char aliases become long flags (e.g., --svc for service_name).
 // Returns a map of fullKey -> value pointer for use with CollectAliasFilters.
 func RegisterAliasFlags(cmd *cobra.Command) map[string]*string {
 	cfg, err := Load()

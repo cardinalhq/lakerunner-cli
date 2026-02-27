@@ -130,6 +130,29 @@ func runAttributesCmd(cmdObj *cobra.Command, _ []string) error {
 	return nil
 }
 
+// buildTagValuesQuery constructs a LogQL selector from app name, log level, and filters.
+// Returns an empty string if no conditions are provided.
+func buildTagValuesQuery(appName, logLevel string, filters []string) string {
+	var conditions []string
+	if appName != "" {
+		conditions = append(conditions, fmt.Sprintf(`service_name="%s"`, normalizeTag(appName)))
+	}
+	if logLevel != "" {
+		conditions = append(conditions, fmt.Sprintf(`level="%s"`, normalizeTag(logLevel)))
+	}
+	for _, f := range filters {
+		if parts := strings.SplitN(f, ":", 2); len(parts) == 2 {
+			key := normalizeTag(parts[0])
+			val := normalizeTag(parts[1])
+			conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, val))
+		}
+	}
+	if len(conditions) > 0 {
+		return "{" + strings.Join(conditions, ", ") + "}"
+	}
+	return ""
+}
+
 func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
 	noColor, _ := cmdObj.Flags().GetBool("no-color")
 
@@ -172,27 +195,7 @@ func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
 	// Collect filters from alias flags (e.g., -i prod)
 	allFilters = append(allFilters, presets.CollectAliasFilters(tagValuesAliasValues)...)
 
-	var conditions []string
-	if attributesAppName != "" {
-		conditions = append(conditions, fmt.Sprintf(`service_name="%s"`, normalizeTag(attributesAppName)))
-	}
-	if attributesLogLevel != "" {
-		conditions = append(conditions, fmt.Sprintf(`level="%s"`, normalizeTag(attributesLogLevel)))
-	}
-	for _, f := range allFilters {
-		if parts := strings.SplitN(f, ":", 2); len(parts) == 2 {
-			key := normalizeTag(parts[0])
-			val := normalizeTag(parts[1])
-			conditions = append(conditions, fmt.Sprintf(`%s="%s"`, key, val))
-		}
-	}
-
-	var q string
-	if len(conditions) > 0 {
-		q = "{" + strings.Join(conditions, ", ") + "}"
-	} else {
-		q = ""
-	}
+	q := buildTagValuesQuery(attributesAppName, attributesLogLevel, allFilters)
 
 	// Call /logs/tagvalues
 	responseChan, err := client.QueryLogTagValues(ctx, tagName, q, startTimeStr, endTimeStr)

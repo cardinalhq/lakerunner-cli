@@ -12,6 +12,7 @@ The upstream Lakerunner spec (`flatten-attribute-namespaces.md`) removes namespa
 - Field extraction from response tags: `log_level`, `log_message`, `resource_service_name`, `resource_k8s_pod_name`
 - Default selector fallback in LogQL: `{resource_service_name=~".+"}`
 - Tag value queries: `_cardinalhq_level` for level filtering, `resource_service_name` for service filtering
+- Custom attribute tags: `attr_exception_type` for `exception_type`
 
 All of these must be updated to use flat names.
 
@@ -34,7 +35,7 @@ All of these must be updated to use flat names.
 
 3. **Default text output**: Update the default (no-columns) text output format to extract `level`, `message`, and `service_name` from tags instead of their prefixed equivalents.
 
-4. **Attributes command (`logs get-attr`)**: Keep current behavior of listing tags and excluding `_cardinalhq*` internal tags. No LogQL predicate rewrite is required in this command.
+4. **Attributes command (`logs get-attr`)**: Keep current behavior of listing tags and excluding `_cardinalhq*` internal tags. No LogQL predicate rewrite is required in the `get-attr` command itself (the `logs get-values` command in the same file is updated separately in requirement 5).
 
 5. **Tag values command**: Update `logs get-values` to use flat names:
    - Level filtering: use `level` instead of `_cardinalhq_level`
@@ -48,6 +49,7 @@ All of these must be updated to use flat names.
 - No behavioral changes to output formatting logic — only the attribute names used to look up values change.
 - Backward compatibility with prefixed names is NOT required — the CLI assumes flat mode is enabled on the server.
 - Automatic migration of user presets/aliases from prefixed keys to flat keys is NOT required.
+- Users with existing presets or aliases referencing prefixed attribute names (e.g., `resource_service_name`) must manually update them to flat names (e.g., `service_name`). No automatic migration or warning is provided.
 
 ## Scope
 
