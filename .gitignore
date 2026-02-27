@@ -28,3 +28,6 @@ vendor
 
 # generated files from lakerunner install script
 generated
+
+# Implementation plans (scratch/working docs)
+docs/plans

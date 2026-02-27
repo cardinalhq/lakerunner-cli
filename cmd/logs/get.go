@@ -82,28 +82,28 @@ func getFieldValue(message map[string]any, tags map[string]any, field string) st
 		return ""
 	case "level":
 		if tags != nil {
-			if level, ok := tags["log_level"].(string); ok {
+			if level, ok := tags["level"].(string); ok {
 				return level
 			}
 		}
 		return ""
 	case "message":
 		if tags != nil {
-			if msg, ok := tags["log_message"].(string); ok {
+			if msg, ok := tags["message"].(string); ok {
 				return msg
 			}
 		}
 		return ""
 	case "service", "svc":
 		if tags != nil {
-			if service, ok := tags["resource_service_name"].(string); ok {
+			if service, ok := tags["service_name"].(string); ok {
 				return service
 			}
 		}
 		return ""
 	case "pod":
 		if tags != nil {
-			if pod, ok := tags["resource_k8s_pod_name"].(string); ok {
+			if pod, ok := tags["k8s_pod_name"].(string); ok {
 				return pod
 			}
 		}
@@ -140,8 +140,8 @@ func formatCSVRow(values []string, delimiter string) string {
 }
 
 // buildAppCondition builds a LogQL condition for service name filtering
-// Single app: resource_service_name="app"
-// Multiple apps: resource_service_name=~"app1|app2|app3"
+// Single app: service_name="app"
+// Multiple apps: service_name=~"app1|app2|app3"
 func buildAppCondition(appName string) string {
 	apps := strings.Split(appName, ",")
 	// Filter and normalize app names
@@ -156,10 +156,10 @@ func buildAppCondition(appName string) string {
 		return ""
 	}
 	if len(normalized) == 1 {
-		return fmt.Sprintf(`resource_service_name="%s"`, normalized[0])
+		return fmt.Sprintf(`service_name="%s"`, normalized[0])
 	}
 	// Multiple apps: use regex match
-	return fmt.Sprintf(`resource_service_name=~"%s"`, strings.Join(normalized, "|"))
+	return fmt.Sprintf(`service_name=~"%s"`, strings.Join(normalized, "|"))
 }
 
 // buildLogQLQuery constructs a LogQL query from filter parameters
@@ -171,7 +171,7 @@ func buildLogQLQuery(appName, logLevel string, filters []string, messageContains
 		}
 	}
 	if logLevel != "" {
-		conditions = append(conditions, fmt.Sprintf(`log_level="%s"`, normalizeTag(logLevel)))
+		conditions = append(conditions, fmt.Sprintf(`level="%s"`, normalizeTag(logLevel)))
 	}
 	for _, f := range filters {
 		parts := strings.SplitN(f, ":", 2)
@@ -182,7 +182,7 @@ func buildLogQLQuery(appName, logLevel string, filters []string, messageContains
 		}
 	}
 
-	q := `{resource_service_name=~".+"}`
+	q := `{service_name=~".+"}`
 	if len(conditions) > 0 {
 		q = "{" + strings.Join(conditions, ", ") + "}"
 	}
@@ -461,16 +461,16 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 			levelVal := ""
 			podName := ""
 			if tags != nil {
-				if msg, ok := tags["log_message"].(string); ok {
+				if msg, ok := tags["message"].(string); ok {
 					logMessage = msg
 				}
-				if service, ok := tags["resource_service_name"].(string); ok {
+				if service, ok := tags["service_name"].(string); ok {
 					serviceName = service
 				}
-				if level, ok := tags["log_level"].(string); ok {
+				if level, ok := tags["level"].(string); ok {
 					levelVal = level
 				}
-				if pod, ok := tags["resource_k8s_pod_name"].(string); ok {
+				if pod, ok := tags["k8s_pod_name"].(string); ok {
 					podName = pod
 				}
 			}
