@@ -32,18 +32,18 @@ var mockLogEntries = []struct {
 			"timestamp":    int64(1771022549165),
 			"timestamp_ns": int64(1771022549165115500),
 			"tags": map[string]any{
-				"log_level":             "INFO",
-				"log_message":           "GetCartAsync called with userId={userId}",
-				"resource_service_name": "cartservice",
-				"resource_k8s_pod_name": "otel-demo-cartservice-744fc69cf7-bmm9z",
+				"level":             "INFO",
+				"message":           "GetCartAsync called with userId={userId}",
+				"service": "cartservice",
+				"k8s_pod_name": "otel-demo-cartservice-744fc69cf7-bmm9z",
 				"trace_id":              "fa80431d09e856c223bc3f691d0869e7",
 			},
 		},
 		tags: map[string]any{
-			"log_level":             "INFO",
-			"log_message":           "GetCartAsync called with userId={userId}",
-			"resource_service_name": "cartservice",
-			"resource_k8s_pod_name": "otel-demo-cartservice-744fc69cf7-bmm9z",
+			"level":             "INFO",
+			"message":           "GetCartAsync called with userId={userId}",
+			"service": "cartservice",
+			"k8s_pod_name": "otel-demo-cartservice-744fc69cf7-bmm9z",
 			"trace_id":              "fa80431d09e856c223bc3f691d0869e7",
 		},
 	},
@@ -53,18 +53,18 @@ var mockLogEntries = []struct {
 			"timestamp":    int64(1771019896965),
 			"timestamp_ns": int64(1771019896965957376),
 			"tags": map[string]any{
-				"log_level":             "ERROR",
-				"log_message":           "Error ErrorCode.GENERAL while evaluating flag with key: 'loadgeneratorFloodHomepage'",
-				"resource_service_name": "loadgenerator",
-				"resource_k8s_pod_name": "otel-demo-loadgenerator-6b44d87f55-kng6x",
+				"level":             "ERROR",
+				"message":           "Error ErrorCode.GENERAL while evaluating flag with key: 'loadgeneratorFloodHomepage'",
+				"service": "loadgenerator",
+				"k8s_pod_name": "otel-demo-loadgenerator-6b44d87f55-kng6x",
 				"attr_exception_type":   "GeneralError",
 			},
 		},
 		tags: map[string]any{
-			"log_level":             "ERROR",
-			"log_message":           "Error ErrorCode.GENERAL while evaluating flag with key: 'loadgeneratorFloodHomepage'",
-			"resource_service_name": "loadgenerator",
-			"resource_k8s_pod_name": "otel-demo-loadgenerator-6b44d87f55-kng6x",
+			"level":             "ERROR",
+			"message":           "Error ErrorCode.GENERAL while evaluating flag with key: 'loadgeneratorFloodHomepage'",
+			"service": "loadgenerator",
+			"k8s_pod_name": "otel-demo-loadgenerator-6b44d87f55-kng6x",
 			"attr_exception_type":   "GeneralError",
 		},
 	},
@@ -74,17 +74,17 @@ var mockLogEntries = []struct {
 			"timestamp":    int64(1771022489921),
 			"timestamp_ns": int64(1771022489921509376),
 			"tags": map[string]any{
-				"log_level":             "WARN",
-				"log_message":           "Transient error StatusCode.UNAVAILABLE encountered while exporting metrics",
-				"resource_service_name": "loadgenerator",
-				"resource_k8s_pod_name": "otel-demo-loadgenerator-6b44d87f55-kng6x",
+				"level":             "WARN",
+				"message":           "Transient error StatusCode.UNAVAILABLE encountered while exporting metrics",
+				"service": "loadgenerator",
+				"k8s_pod_name": "otel-demo-loadgenerator-6b44d87f55-kng6x",
 			},
 		},
 		tags: map[string]any{
-			"log_level":             "WARN",
-			"log_message":           "Transient error StatusCode.UNAVAILABLE encountered while exporting metrics",
-			"resource_service_name": "loadgenerator",
-			"resource_k8s_pod_name": "otel-demo-loadgenerator-6b44d87f55-kng6x",
+			"level":             "WARN",
+			"message":           "Transient error StatusCode.UNAVAILABLE encountered while exporting metrics",
+			"service": "loadgenerator",
+			"k8s_pod_name": "otel-demo-loadgenerator-6b44d87f55-kng6x",
 		},
 	},
 }
@@ -103,9 +103,8 @@ func TestGetFieldValue(t *testing.T) {
 			message: map[string]any{"timestamp_ns": int64(1771022549165115500)},
 			tags:    nil,
 			field:   "timestamp",
-			// Timestamp formatting is timezone-dependent, so just check format
 			checkFunc: func(s string) bool {
-				return strings.Contains(s, "2026-02-") && strings.Contains(s, ":42:29")
+				return strings.Contains(s, "2026-02-") && strings.Contains(s, ".1651155")
 			},
 		},
 		{
@@ -113,43 +112,42 @@ func TestGetFieldValue(t *testing.T) {
 			message: map[string]any{"timestamp": int64(1771022549165)},
 			tags:    nil,
 			field:   "timestamp",
-			// Timestamp formatting is timezone-dependent, so just check format
 			checkFunc: func(s string) bool {
-				return strings.Contains(s, "2026-02-") && strings.Contains(s, ":42:29.165")
+				return strings.Contains(s, "2026-02-") && strings.HasSuffix(s, ".165")
 			},
 		},
 		{
 			name:     "get level from tags",
 			message:  map[string]any{},
-			tags:     map[string]any{"log_level": "INFO"},
+			tags:     map[string]any{"level": "INFO"},
 			field:    "level",
 			expected: "INFO",
 		},
 		{
 			name:     "get message from tags",
 			message:  map[string]any{},
-			tags:     map[string]any{"log_message": "test message"},
+			tags:     map[string]any{"message": "test message"},
 			field:    "message",
 			expected: "test message",
 		},
 		{
 			name:     "get service from tags",
 			message:  map[string]any{},
-			tags:     map[string]any{"resource_service_name": "cartservice"},
+			tags:     map[string]any{"service": "cartservice"},
 			field:    "service",
 			expected: "cartservice",
 		},
 		{
 			name:     "get svc alias for service",
 			message:  map[string]any{},
-			tags:     map[string]any{"resource_service_name": "myservice"},
+			tags:     map[string]any{"service": "myservice"},
 			field:    "svc",
 			expected: "myservice",
 		},
 		{
 			name:     "get pod from tags",
 			message:  map[string]any{},
-			tags:     map[string]any{"resource_k8s_pod_name": "my-pod-abc123"},
+			tags:     map[string]any{"k8s_pod_name": "my-pod-abc123"},
 			field:    "pod",
 			expected: "my-pod-abc123",
 		},
@@ -332,9 +330,9 @@ func TestFormatJSONEntry(t *testing.T) {
 				"timestamp_ns": int64(1771022549165115500),
 			},
 			tags: map[string]any{
-				"log_level":             "INFO",
-				"log_message":           "test message",
-				"resource_service_name": "testservice",
+				"level":             "INFO",
+				"message":           "test message",
+				"service": "testservice",
 			},
 			cols: []string{"timestamp", "level", "service", "message"},
 		},
@@ -344,9 +342,9 @@ func TestFormatJSONEntry(t *testing.T) {
 				"timestamp_ns": int64(1771022549165115500),
 			},
 			tags: map[string]any{
-				"log_level":             "ERROR",
-				"log_message":           "error occurred",
-				"resource_service_name": "errorservice",
+				"level":             "ERROR",
+				"message":           "error occurred",
+				"service": "errorservice",
 				"trace_id":              "abc123",
 			},
 			cols: []string{"level", "message", "trace_id"},
@@ -390,9 +388,9 @@ func TestFormatJSONEntryValues(t *testing.T) {
 		"timestamp_ns": int64(1771022549165115500),
 	}
 	tags := map[string]any{
-		"log_level":             "INFO",
-		"log_message":           "GetCartAsync called",
-		"resource_service_name": "cartservice",
+		"level":             "INFO",
+		"message":           "GetCartAsync called",
+		"service": "cartservice",
 	}
 
 	result := formatJSONEntry(message, tags, []string{"level", "service", "message"})
@@ -515,39 +513,39 @@ func TestBuildLogQLQuery(t *testing.T) {
 	}{
 		{
 			name:     "no filters",
-			expected: `{resource_service_name=~".+"}`,
+			expected: `{service=~".+"}`,
 		},
 		{
 			name:     "single app",
 			appName:  "cartservice",
-			expected: `{resource_service_name="cartservice"}`,
+			expected: `{service="cartservice"}`,
 		},
 		{
 			name:     "multiple apps",
 			appName:  "cartservice,checkoutservice",
-			expected: `{resource_service_name=~"cartservice|checkoutservice"}`,
+			expected: `{service=~"cartservice|checkoutservice"}`,
 		},
 		{
 			name:     "multiple apps with spaces",
 			appName:  "cartservice, checkoutservice, frontend",
-			expected: `{resource_service_name=~"cartservice|checkoutservice|frontend"}`,
+			expected: `{service=~"cartservice|checkoutservice|frontend"}`,
 		},
 		{
 			name:     "app and level",
 			appName:  "cartservice",
 			logLevel: "ERROR",
-			expected: `{resource_service_name="cartservice", log_level="ERROR"}`,
+			expected: `{service="cartservice", level="ERROR"}`,
 		},
 		{
 			name:     "multiple apps and level",
 			appName:  "cartservice,checkoutservice",
 			logLevel: "ERROR",
-			expected: `{resource_service_name=~"cartservice|checkoutservice", log_level="ERROR"}`,
+			expected: `{service=~"cartservice|checkoutservice", level="ERROR"}`,
 		},
 		{
 			name:     "level only",
 			logLevel: "WARN",
-			expected: `{log_level="WARN"}`,
+			expected: `{level="WARN"}`,
 		},
 		{
 			name:    "custom filter",
@@ -558,31 +556,31 @@ func TestBuildLogQLQuery(t *testing.T) {
 			name:     "app with custom filters",
 			appName:  "cartservice",
 			filters:  []string{"environment:prod", "region:us-west-2"},
-			expected: `{resource_service_name="cartservice", environment="prod", region="us-west-2"}`,
+			expected: `{service="cartservice", environment="prod", region="us-west-2"}`,
 		},
 		{
 			name:            "message contains",
 			appName:         "cartservice",
 			messageContains: "error",
-			expected:        `{resource_service_name="cartservice"} |= "error"`,
+			expected:        `{service="cartservice"} |= "error"`,
 		},
 		{
 			name:               "message not contains",
 			appName:            "cartservice",
 			messageNotContains: "health",
-			expected:           `{resource_service_name="cartservice"} != "health"`,
+			expected:           `{service="cartservice"} != "health"`,
 		},
 		{
 			name:              "message regex match",
 			appName:           "cartservice",
 			messageRegexMatch: "user_id=\\d+",
-			expected:          `{resource_service_name="cartservice"} |~ "user_id=\d+"`,
+			expected:          `{service="cartservice"} |~ "user_id=\d+"`,
 		},
 		{
 			name:            "message regex not",
 			appName:         "cartservice",
 			messageRegexNot: "DEBUG|TRACE",
-			expected:        `{resource_service_name="cartservice"} !~ "DEBUG|TRACE"`,
+			expected:        `{service="cartservice"} !~ "DEBUG|TRACE"`,
 		},
 		{
 			name:               "all message filters",
@@ -591,7 +589,7 @@ func TestBuildLogQLQuery(t *testing.T) {
 			messageNotContains: "health",
 			messageRegexMatch:  "status=\\d+",
 			messageRegexNot:    "DEBUG",
-			expected:           `{resource_service_name="cartservice"} |= "request" != "health" |~ "status=\d+" !~ "DEBUG"`,
+			expected:           `{service="cartservice"} |= "request" != "health" |~ "status=\d+" !~ "DEBUG"`,
 		},
 		{
 			name:     "full complex query",
@@ -599,18 +597,18 @@ func TestBuildLogQLQuery(t *testing.T) {
 			logLevel: "ERROR",
 			filters:  []string{"environment:prod"},
 			messageContains: "timeout",
-			expected: `{resource_service_name=~"cartservice|checkoutservice", log_level="ERROR", environment="prod"} |= "timeout"`,
+			expected: `{service=~"cartservice|checkoutservice", level="ERROR", environment="prod"} |= "timeout"`,
 		},
 		{
 			name:     "empty app entries ignored",
 			appName:  ",,,",
 			logLevel: "ERROR",
-			expected: `{log_level="ERROR"}`,
+			expected: `{level="ERROR"}`,
 		},
 		{
 			name:     "trailing comma in app",
 			appName:  "cartservice,",
-			expected: `{resource_service_name="cartservice"}`,
+			expected: `{service="cartservice"}`,
 		},
 	}
 
@@ -633,57 +631,57 @@ func TestBuildAppCondition(t *testing.T) {
 		{
 			name:     "single app",
 			input:    "cartservice",
-			expected: `resource_service_name="cartservice"`,
+			expected: `service="cartservice"`,
 		},
 		{
 			name:     "single app with leading space",
 			input:    " cartservice",
-			expected: `resource_service_name="cartservice"`,
+			expected: `service="cartservice"`,
 		},
 		{
 			name:     "single app with trailing space",
 			input:    "cartservice ",
-			expected: `resource_service_name="cartservice"`,
+			expected: `service="cartservice"`,
 		},
 		{
 			name:     "two apps",
 			input:    "cartservice,checkoutservice",
-			expected: `resource_service_name=~"cartservice|checkoutservice"`,
+			expected: `service=~"cartservice|checkoutservice"`,
 		},
 		{
 			name:     "three apps",
 			input:    "cartservice,checkoutservice,frontend",
-			expected: `resource_service_name=~"cartservice|checkoutservice|frontend"`,
+			expected: `service=~"cartservice|checkoutservice|frontend"`,
 		},
 		{
 			name:     "apps with spaces",
 			input:    "cartservice, checkoutservice, frontend",
-			expected: `resource_service_name=~"cartservice|checkoutservice|frontend"`,
+			expected: `service=~"cartservice|checkoutservice|frontend"`,
 		},
 		{
 			name:     "single app with dots",
 			input:    "my.service.name",
-			expected: `resource_service_name="my_service_name"`,
+			expected: `service="my_service_name"`,
 		},
 		{
 			name:     "multiple apps with dots",
 			input:    "my.service,another.service",
-			expected: `resource_service_name=~"my_service|another_service"`,
+			expected: `service=~"my_service|another_service"`,
 		},
 		{
 			name:     "mixed dots and underscores",
 			input:    "cart.service,checkout_service",
-			expected: `resource_service_name=~"cart_service|checkout_service"`,
+			expected: `service=~"cart_service|checkout_service"`,
 		},
 		{
 			name:     "trailing comma filtered",
 			input:    "cartservice,",
-			expected: `resource_service_name="cartservice"`,
+			expected: `service="cartservice"`,
 		},
 		{
 			name:     "empty entries filtered",
 			input:    "cartservice,,checkoutservice",
-			expected: `resource_service_name=~"cartservice|checkoutservice"`,
+			expected: `service=~"cartservice|checkoutservice"`,
 		},
 		{
 			name:     "all empty returns empty",

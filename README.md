@@ -48,3 +48,14 @@ lakerunner logs get -s e-24h --limit 50000 -o csv > yesterday.csv
 ```
 
 See the [full CLI reference](https://docs.cardinalhq.io/lakerunner/cli) for all flags, output formats, presets, aliases, and more.
+
+## Building from source
+
+Requires Go 1.24+.
+
+```sh
+git clone https://github.com/cardinalhq/lakerunner-cli.git
+cd lakerunner-cli
+make local        # produces ./bin/lakerunner-cli
+make check        # go test -race + license-check + golangci-lint
+```
