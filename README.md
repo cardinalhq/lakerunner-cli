@@ -49,6 +49,18 @@ lakerunner logs get -s e-24h --limit 50000 -o csv > yesterday.csv
 
 See the [full CLI reference](https://docs.cardinalhq.io/lakerunner/cli) for all flags, output formats, presets, aliases, and more.
 
+## Claude Code skill
+
+If you use [Claude Code](https://docs.claude.com/en/docs/claude-code/overview), install the bundled skill so Claude can query your logs on your behalf:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cardinalhq/lakerunner-cli/main/scripts/install-claude-skill.sh | bash
+```
+
+Or, from a checkout: `make install-skill`.
+
+Once installed, type `/lakerunner-cli` in Claude Code. See the [skill docs](https://docs.cardinalhq.io/lakerunner/claude-skill) for details.
+
 ## Building from source
 
 Requires Go 1.24+.

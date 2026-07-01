@@ -118,6 +118,13 @@ test-only:
 
 
 #
+# Install the Claude Code skill into ~/.claude/skills/
+#
+.PHONY: install-skill
+install-skill:
+	./scripts/install-claude-skill.sh
+
+#
 # promode to prod
 #
 
