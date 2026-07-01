@@ -210,12 +210,12 @@ func (c *Client) streamResponses(ctx context.Context, httpReq *http.Request) (<-
 
 				if strings.HasPrefix(line, "data: ") {
 					data := strings.TrimPrefix(line, "data: ")
-					if data == `{"type":"done"}` {
-						return
-					}
 					var response LogsResponse
 					if err := json.Unmarshal([]byte(data), &response); err != nil {
 						continue
+					}
+					if response.Type == "done" {
+						return
 					}
 					select {
 					case responseChan <- response:

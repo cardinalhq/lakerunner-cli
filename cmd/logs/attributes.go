@@ -174,10 +174,10 @@ func runTagValuesCmd(cmdObj *cobra.Command, args []string) error {
 
 	var conditions []string
 	if attributesAppName != "" {
-		conditions = append(conditions, fmt.Sprintf(`resource_service_name="%s"`, normalizeTag(attributesAppName)))
+		conditions = append(conditions, fmt.Sprintf(`service="%s"`, normalizeTag(attributesAppName)))
 	}
 	if attributesLogLevel != "" {
-		conditions = append(conditions, fmt.Sprintf(`_cardinalhq_level="%s"`, normalizeTag(attributesLogLevel)))
+		conditions = append(conditions, fmt.Sprintf(`level="%s"`, normalizeTag(attributesLogLevel)))
 	}
 	for _, f := range allFilters {
 		if parts := strings.SplitN(f, ":", 2); len(parts) == 2 {
