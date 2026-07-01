@@ -59,7 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/cardinalhq/lakerunner-cli/main/scri
 
 Or, from a checkout: `make install-skill`.
 
-Once installed, type `/lakerunner-cli` in Claude Code. See the [skill docs](https://docs.cardinalhq.io/lakerunner/claude-skill) for details.
+Once installed, type `/lakerunner-cli` in Claude Code. See the [skill docs](https://docs.cardinalhq.io/lakerunner/cli/claude-skill) for details.
 
 ## Building from source
 
