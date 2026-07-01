@@ -101,13 +101,17 @@ func (c *Client) QueryLogs(
 	return c.streamResponses(ctx, httpReq)
 }
 
-// QueryLogTags makes a request to tags query and returns a json response
-func (c *Client) QueryLogTags(ctx context.Context, s string, e string) (<-chan LogsResponse, error) {
+// QueryLogTags makes a request to tags query and returns a json response.
+// If q is non-empty, the returned tag list is scoped to logs matching the LogQL selector.
+func (c *Client) QueryLogTags(ctx context.Context, q, s, e string) (<-chan LogsResponse, error) {
 	url := c.baseURL + "/api/v1/logs/tags"
 
 	body := map[string]interface{}{
 		"s": s,
 		"e": e,
+	}
+	if q != "" {
+		body["q"] = q
 	}
 	jsonData, err := json.Marshal(body)
 	if err != nil {

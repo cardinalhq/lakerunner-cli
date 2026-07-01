@@ -29,13 +29,14 @@ import (
 )
 
 var (
-	attributesFilters    []string
-	attributesPreset     string
-	attributesStartTime  string
-	attributesEndTime    string
-	attributesAppName    string
-	attributesLogLevel   string
-	tagValuesAliasValues map[string]*string
+	attributesFilters      []string
+	attributesPreset       string
+	attributesStartTime    string
+	attributesEndTime      string
+	attributesAppName      string
+	attributesLogLevel     string
+	attributesAliasValues  map[string]*string
+	tagValuesAliasValues   map[string]*string
 )
 
 var AttributesCmd = &cobra.Command{
@@ -68,7 +69,7 @@ func init() {
 	TagValuesCmd.Flags().StringVarP(&attributesEndTime, "end", "e", "", "End time (e.g., 'now', '2024-01-01T23:59:59Z')")
 	TagValuesCmd.Flags().StringVarP(&attributesAppName, "app", "a", "", "Filter by application/service name")
 	TagValuesCmd.Flags().StringVarP(&attributesLogLevel, "level", "l", "", "Filter by log level (e.g., ERROR, INFO, DEBUG, WARN)")
-	presets.RegisterAliasFlags(AttributesCmd)
+	attributesAliasValues = presets.RegisterAliasFlags(AttributesCmd)
 	tagValuesAliasValues = presets.RegisterAliasFlags(TagValuesCmd)
 }
 
@@ -90,15 +91,40 @@ func runAttributesCmd(cmdObj *cobra.Command, _ []string) error {
 	startTimeStr := fmt.Sprintf("%d", startMs)
 	endTimeStr := fmt.Sprintf("%d", endMs)
 
+	// Assemble filter set from preset + -f flags + alias flags (same rules as `logs get`).
+	allFilters := attributesFilters
+	if attributesPreset != "" {
+		presetFilters, err := presets.GetFilters(attributesPreset)
+		if err != nil {
+			return err
+		}
+		allFilters = append(presetFilters, attributesFilters...)
+	}
+	allFilters, err = presets.ResolveFilters(allFilters)
+	if err != nil {
+		return err
+	}
+	allFilters = append(allFilters, presets.CollectAliasFilters(attributesAliasValues)...)
+
+	// Build LogQL selector. Empty string means "all logs" — the server takes the fast DB path.
+	var q string
+	if attributesAppName != "" || attributesLogLevel != "" || len(allFilters) > 0 {
+		q = buildLogQLQuery(attributesAppName, attributesLogLevel, allFilters, "", "", "", "")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	responseChan, err := client.QueryLogTags(ctx, startTimeStr, endTimeStr)
+	responseChan, err := client.QueryLogTags(ctx, q, startTimeStr, endTimeStr)
 	if err != nil {
 		return fmt.Errorf("failed to query tags: %w", err)
 	}
 
-	fmt.Printf("Querying tags from %s to %s...\n", startTimeStr, endTimeStr)
+	fmt.Printf("Querying tags from %s to %s", startTimeStr, endTimeStr)
+	if q != "" {
+		fmt.Printf(" with query %s", q)
+	}
+	fmt.Println("...")
 	fmt.Println("---")
 
 	tagsSet := make(map[string]bool)

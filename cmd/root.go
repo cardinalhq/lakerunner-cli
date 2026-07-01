@@ -50,7 +50,6 @@ func Execute() error {
 }
 
 func init() {
-	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	rootCmd.PersistentFlags().BoolP("quiet", "q", false, "suppress informational output")
 	rootCmd.PersistentFlags().Bool("no-color", false, "disable colored output")
 	rootCmd.PersistentFlags().String("endpoint", "", "API endpoint URL (overrides LAKERUNNER_QUERY_URL)")
