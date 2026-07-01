@@ -24,11 +24,20 @@ For full documentation, see the [CLI reference](https://docs.cardinalhq.io/laker
 
 ### Quick setup
 
-Set your endpoint and API key ([Lakerunner setup guide](https://docs.cardinalhq.io/lakerunner)):
+Set your endpoint and API key ([Lakerunner setup guide](https://docs.cardinalhq.io/lakerunner)).
+
+**macOS / Linux:**
 
 ```sh
 export LAKERUNNER_QUERY_URL=http://localhost:7101
 export LAKERUNNER_API_KEY=your-api-key
+```
+
+**Windows (PowerShell):**
+
+```powershell
+setx LAKERUNNER_QUERY_URL "http://localhost:7101"
+setx LAKERUNNER_API_KEY   "your-api-key"
 ```
 
 ### Quick examples
@@ -51,13 +60,23 @@ See the [full CLI reference](https://docs.cardinalhq.io/lakerunner/cli) for all 
 
 ## Claude Code skill
 
-If you use [Claude Code](https://docs.claude.com/en/docs/claude-code/overview), install the bundled skill so Claude can query your logs on your behalf:
+If you use [Claude Code](https://docs.claude.com/en/docs/claude-code/overview), install the bundled skill so Claude can query your logs on your behalf. The installer prompts you for `LAKERUNNER_QUERY_URL` and `LAKERUNNER_API_KEY` and offers to persist them for you.
+
+**macOS / Linux:**
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/cardinalhq/lakerunner-cli/main/scripts/install-claude-skill.sh | bash
 ```
 
 Or, from a checkout: `make install-skill`.
+
+**Windows (PowerShell):**
+
+```powershell
+iex (irm https://raw.githubusercontent.com/cardinalhq/lakerunner-cli/main/scripts/install-claude-skill.ps1)
+```
+
+Or, from a checkout: `pwsh scripts\install-claude-skill.ps1`.
 
 Once installed, type `/lakerunner-cli` in Claude Code. See the [skill docs](https://docs.cardinalhq.io/lakerunner/cli/claude-skill) for details.
 
