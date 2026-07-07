@@ -17,6 +17,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/joho/godotenv"
 )
@@ -24,6 +25,10 @@ import (
 type Config struct {
 	LAKERUNNER_QUERY_URL string
 	LAKERUNNER_API_KEY   string
+	// Insecure skips TLS certificate verification. Use only for endpoints
+	// with a self-signed certificate (e.g. a CloudFormation install whose
+	// ALB has no real cert). Equivalent to curl -k.
+	Insecure bool
 }
 
 func Load() (*Config, error) {
@@ -33,18 +38,20 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		LAKERUNNER_QUERY_URL: getEnv("LAKERUNNER_QUERY_URL", ""),
 		LAKERUNNER_API_KEY:   getEnv("LAKERUNNER_API_KEY", ""),
+		Insecure:             getEnvBool("LAKERUNNER_INSECURE"),
 	}
 	return cfg, cfg.Validate()
 }
 
 // LoadWithFlags loads configuration with optional flag overrides
-func LoadWithFlags(endpointFlag, apiKeyFlag string) (*Config, error) {
+func LoadWithFlags(endpointFlag, apiKeyFlag string, insecureFlag bool) (*Config, error) {
 	// Try to load .env file, but don't fail if it doesn't exist
 	_ = godotenv.Load()
 
 	cfg := &Config{
 		LAKERUNNER_QUERY_URL: getEnvOrFlag("LAKERUNNER_QUERY_URL", endpointFlag),
 		LAKERUNNER_API_KEY:   getEnvOrFlag("LAKERUNNER_API_KEY", apiKeyFlag),
+		Insecure:             insecureFlag || getEnvBool("LAKERUNNER_INSECURE"),
 	}
 	return cfg, cfg.Validate()
 }
@@ -62,6 +69,13 @@ func getEnvOrFlag(envKey, flagValue string) string {
 		return flagValue
 	}
 	return getEnv(envKey, "")
+}
+
+// getEnvBool parses a boolean environment variable (e.g. "1", "true"); unset or
+// unparseable is false.
+func getEnvBool(key string) bool {
+	v, err := strconv.ParseBool(os.Getenv(key))
+	return err == nil && v
 }
 
 func (c *Config) Validate() error {

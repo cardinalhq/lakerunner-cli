@@ -33,6 +33,10 @@ export LAKERUNNER_QUERY_URL=http://localhost:7101
 export LAKERUNNER_API_KEY=your-api-key
 ```
 
+If your endpoint uses a self-signed certificate (e.g. a CloudFormation install
+whose ALB has no real cert), pass `--insecure` or set `LAKERUNNER_INSECURE=1` to
+skip TLS verification (equivalent to `curl -k`).
+
 **Windows (PowerShell):**
 
 ```powershell
