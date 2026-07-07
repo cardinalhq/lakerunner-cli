@@ -54,6 +54,7 @@ func init() {
 	rootCmd.PersistentFlags().Bool("no-color", false, "disable colored output")
 	rootCmd.PersistentFlags().String("endpoint", "", "API endpoint URL (overrides LAKERUNNER_QUERY_URL)")
 	rootCmd.PersistentFlags().String("api-key", "", "API key (overrides LAKERUNNER_API_KEY)")
+	rootCmd.PersistentFlags().Bool("insecure", false, "skip TLS certificate verification (for self-signed endpoints; overrides LAKERUNNER_INSECURE)")
 
 	rootCmd.AddCommand(logs.LogsCmd)
 	rootCmd.AddCommand(demo.DemoCmd)

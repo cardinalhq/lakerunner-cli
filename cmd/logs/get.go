@@ -311,7 +311,8 @@ func runGetCmd(cmdObj *cobra.Command, _ []string) error {
 
 	endpoint, _ := cmdObj.Flags().GetString("endpoint")
 	apiKey, _ := cmdObj.Flags().GetString("api-key")
-	cfg, err := config.LoadWithFlags(endpoint, apiKey)
+	insecure, _ := cmdObj.Flags().GetBool("insecure")
+	cfg, err := config.LoadWithFlags(endpoint, apiKey, insecure)
 	if err != nil {
 		return fmt.Errorf("failed to load configuration: %w", err)
 	}

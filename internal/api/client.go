@@ -18,6 +18,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,6 +48,7 @@ func NewClient(cfg *config.Config) *Client {
 				MaxIdleConns:       10,
 				IdleConnTimeout:    60 * time.Second,
 				DisableCompression: false,
+				TLSClientConfig:    &tls.Config{InsecureSkipVerify: cfg.Insecure}, //nolint:gosec // opt-in via --insecure for self-signed endpoints
 			},
 		},
 	}
