@@ -1,6 +1,6 @@
 module github.com/lakerunner/cli
 
-go 1.26.0
+go 1.26.5
 
 require (
 	github.com/cardinalhq/oteltools v0.35.0
@@ -16,7 +16,6 @@ require (
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
@@ -50,7 +49,6 @@ require (
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
-	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.53.0 // indirect
 	golang.org/x/net v0.56.0 // indirect
